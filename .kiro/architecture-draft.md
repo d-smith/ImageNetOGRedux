@@ -18,7 +18,7 @@
 
 ### 3.1. API Ingress & Compute Layer [COMPUTE-01]
 * **Resource Type:** AWS Lambda Functions
-* **Runtime Environment:** Latest Python 3.x
+* **Runtime Environment:** Python 3.12+
 * **Integration Pattern:** Proxy integration with API Gateway REST/HTTP API.
 * **Authentication/Authorization:** AWS Cognito User Pools / Custom Lambda Authorizer
 
@@ -32,7 +32,7 @@
 
 ### 3.4. Vector Embedding Generation Layer [COMPUTE-02]
 * **Resource Type:** AWS Lambda Functions
-* **Runtime Environment:** Latest Python 3.x
+* **Runtime Environment:** Python 3.12+
 
 ### 3.5. Image Upload Orchestration Layer [COMPUTE-03]
 * **Resource Type:** AWS Step Functions
@@ -54,6 +54,12 @@ The following administrative functions will be supported:
     * Generate a description of the image using a low-cost pre-trained bedrock model.
     * Store the image metadata, including the image key, date added, description, and location of the S3 bucket and S3Vector bucket in DynamoDB.
 
+> **Open decision:** the specific Bedrock models for embedding generation
+> (e.g., Titan Multimodal Embeddings) and description generation are not yet
+> pinned down. This needs to be resolved before design.md is generated, since
+> it determines the S3 Vectors schema (embedding dimensionality) and the
+> per-image ingestion cost.
+
 ## 5. Image Search
 
-When searching for images in a collection using a description provided by the user, the system will perform a vector search using the S3Vector bucket to find images that are similar to the provided description. The system will return a list of images that match the search criteria, along with their keys, dates added, and descriptions. The user can then retrieve a specific image in the collection by providing its key, and the system will return a temporary URL to the image file, valid for a limited time (e.g., 5 minutes). The system will ensure that the temporary URL is secure and cannot be used to access the image after it expires.
+When searching for images in a collection using a description provided by the user, the system will perform a vector search using the S3Vector bucket to find images that are similar to the provided description. When a date filter is also supplied, the date filter narrows the candidate set first, and the narrowed set is then ranked by vector similarity to the description (see requirements-draft.md REQ-13 for the default result-limit behavior). The system will return a list of images that match the search criteria, along with their keys, dates added, and descriptions. The user can then retrieve a specific image in the collection by providing its key, and the system will return a temporary URL to the image file, valid for a limited time (e.g., 5 minutes). The system will ensure that the temporary URL is secure and cannot be used to access the image after it expires.
