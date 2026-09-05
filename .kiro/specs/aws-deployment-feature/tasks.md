@@ -10,7 +10,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
 
 ## Tasks
 
-- [ ] 1. Project scaffolding and repository structure
+- [x] 1. Project scaffolding and repository structure
   - Create top-level directory layout: `src/api_handler/`, `src/ingestion/`, `src/scripts/`, `tests/unit/`, `tests/property/`, `tests/integration/`, `terraform/`
   - Add `pyproject.toml` (or `requirements*.txt`) pinning `aws-lambda-powertools`, `boto3`, `hypothesis`, `moto[all]`, `pytest`, `pytest-cov`
   - Add a `pytest.ini` (or `pyproject.toml` `[tool.pytest.ini_options]`) section configuring `testpaths`, `hypothesis` profile, and coverage reporting
