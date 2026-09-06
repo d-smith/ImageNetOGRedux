@@ -3,6 +3,6 @@
 env                     = "prod"
 aws_region              = "us-east-1"
 lambda_memory_mb        = 1024
-api_gateway_rate_limit  = 500
-api_gateway_burst_limit = 1000
-log_retention_days      = 90
+api_gateway_rate_limit  = 10
+api_gateway_burst_limit = 20
+log_retention_days      = 7
