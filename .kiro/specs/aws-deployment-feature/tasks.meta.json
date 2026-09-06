@@ -12,6 +12,49 @@
         "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
         "timestamp": 1788560048608
       }
+    ],
+    "2.1 Create `terraform/versions.tf` pinning `hashicorp/aws ~> 5.0` and Terraform `>= 1.7`": [
+      {
+        "executionId": "26ca6d66-8543-4a27-87c1-d1e27f52da9a",
+        "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
+        "timestamp": 1788628289986
+      },
+      {
+        "executionId": "26ca6d66-8543-4a27-87c1-d1e27f52da9a",
+        "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
+        "timestamp": 1788628666609
+      }
+    ],
+    "2.2 Create `terraform/backend.tf` configuring the S3 remote backend with per-environment key (`${env}/terraform.tfstate`) and DynamoDB lock table `imagenetog-tfstate-locks`": [
+      {
+        "executionId": "953574e8-d579-45f9-8cf3-caad12136794",
+        "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
+        "timestamp": 1788628879382
+      },
+      {
+        "executionId": "953574e8-d579-45f9-8cf3-caad12136794",
+        "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
+        "timestamp": 1788628955278
+      }
+    ],
+    "2.4 Create `terraform/environments/{dev,staging,prod}/terraform.tfvars` with per-environment values": [
+      {
+        "executionId": "97194d74-f905-43e1-853d-b205f8cb1260",
+        "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
+        "timestamp": 1788630381182
+      },
+      {
+        "executionId": "97194d74-f905-43e1-853d-b205f8cb1260",
+        "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
+        "timestamp": 1788630412114
+      }
+    ],
+    "2. Terraform foundation — remote state, provider pins, and shared variables": [
+      {
+        "executionId": "97194d74-f905-43e1-853d-b205f8cb1260",
+        "chatSessionId": "sess_3ebec378-7e15-45e7-a679-4ce475435289",
+        "timestamp": 1788630412125
+      }
     ]
   }
 }
