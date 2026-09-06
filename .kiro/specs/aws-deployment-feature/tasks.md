@@ -24,14 +24,14 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - [x] 2.4 Create `terraform/environments/{dev,staging,prod}/terraform.tfvars` with per-environment values
   - _Requirements: 13.2, 13.3, 13.4, 13.5_
 
-- [ ] 3. Terraform module — `auth` (Cognito)
-  - [ ] 3.1 Write `terraform/modules/auth/main.tf` defining `aws_cognito_user_pool` and `aws_cognito_user_pool_client`; expose `user_pool_id` and `app_client_id` as outputs
-  - [ ]* 3.2 Verify `terraform validate` passes for the `auth` module
+- [x] 3. Terraform module — `auth` (Cognito)
+  - [x] 3.1 Write `terraform/modules/auth/main.tf` defining `aws_cognito_user_pool` and `aws_cognito_user_pool_client`; expose `user_pool_id` and `app_client_id` as outputs
+  - [x]* 3.2 Verify `terraform validate` passes for the `auth` module
   - _Requirements: 3.1, 3.2, 13.1_
 
-- [ ] 4. Terraform module — `storage` (DynamoDB)
-  - [ ] 4.1 Write `terraform/modules/storage/main.tf` defining `aws_dynamodb_table` for `{env}-imagenetog-collections` (PK `collection_name`; GSI `created_epoch-index`) and `{env}-imagenetog-images` (PK `collection_name` + SK `image_key`; LSI `date_added_epoch-index`)
-  - [ ]* 4.2 Verify `terraform validate` passes for the `storage` module
+- [x] 4. Terraform module — `storage` (DynamoDB)
+  - [x] 4.1 Write `terraform/modules/storage/main.tf` defining `aws_dynamodb_table` for `{env}-imagenetog-collections` (PK `collection_name`; GSI `created_epoch-index`) and `{env}-imagenetog-images` (PK `collection_name` + SK `image_key`; LSI `date_added_epoch-index`)
+  - [x]* 4.2 Verify `terraform validate` passes for the `storage` module
   - _Requirements: 13.1_
 
 - [ ] 5. Terraform module — `ingestion` (Step Functions + Lambda ingestion functions + EventBridge)
@@ -57,8 +57,8 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
 - [ ] 8. Shared API library — exceptions, error handler, and response helpers
-  - [ ] 8.1 Create `src/api_handler/exceptions.py` defining `CollectionNotFoundError`, `ImageNotFoundError`, `InvalidParameterError`, `MethodNotAllowedError` (all subclassing a base `APIError` with `http_status` and `error_token` attributes)
-  - [ ] 8.2 Create `src/api_handler/responses.py` with helpers `ok(body)`, `error_response(status, token, message)` that always set `Content-Type: application/json`; the error helper must produce `{"error": "<token>", "message": "<msg>"}` with no stack trace
+  - [x] 8.1 Create `src/api_handler/exceptions.py` defining `CollectionNotFoundError`, `ImageNotFoundError`, `InvalidParameterError`, `MethodNotAllowedError` (all subclassing a base `APIError` with `http_status` and `error_token` attributes)
+  - [x] 8.2 Create `src/api_handler/responses.py` with helpers `ok(body)`, `error_response(status, token, message)` that always set `Content-Type: application/json`; the error helper must produce `{"error": "<token>", "message": "<msg>"}` with no stack trace
   - [ ] 8.3 Create `src/api_handler/middleware.py` with a Powertools middleware (or exception handler decorator) that catches each exception class and calls `error_response` with the mapped status and token; the catch-all for bare `Exception` logs the full traceback to CloudWatch and returns a 500 with `server.error`
   - [ ]* 8.4 Write unit tests in `tests/unit/test_error_handler.py`: verify correct JSON shape, correct token, no traceback in 500 body, correct `Content-Type` header
   - [ ]* 8.5 Write property test `tests/property/test_error_properties.py` — Property 17 (arbitrary error conditions produce `error` + `message` JSON matching `^[a-z_]+\.[a-z_]+$`); Property 18 (requests with invalid parameters produce a 400 body naming each invalid param)
