@@ -17,11 +17,11 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - Add a runtime version guard in `src/api_handler/__init__.py` that imports `sys` and raises `RuntimeError` if `sys.version_info < (3, 12)` — satisfies the Lambda start-up check in Requirement 1.3
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 2. Terraform foundation — remote state, provider pins, and shared variables
-  - [ ] 2.1 Create `terraform/versions.tf` pinning `hashicorp/aws ~> 5.0` and Terraform `>= 1.7`
-  - [ ] 2.2 Create `terraform/backend.tf` configuring the S3 remote backend with per-environment key (`${env}/terraform.tfstate`) and DynamoDB lock table `imagenetog-tfstate-locks`
-  - [ ] 2.3 Create `terraform/environments/{dev,staging,prod}/variables.tf` declaring `env`, `aws_region` (default `us-east-1`), and per-environment tunable variables (Lambda memory, rate-limit burst/rate)
-  - [ ] 2.4 Create `terraform/environments/{dev,staging,prod}/terraform.tfvars` with per-environment values
+- [x] 2. Terraform foundation — remote state, provider pins, and shared variables
+  - [x] 2.1 Create `terraform/versions.tf` pinning `hashicorp/aws ~> 5.0` and Terraform `>= 1.7`
+  - [x] 2.2 Create `terraform/backend.tf` configuring the S3 remote backend with per-environment key (`${env}/terraform.tfstate`) and DynamoDB lock table `imagenetog-tfstate-locks`
+  - [x] 2.3 Create `terraform/environments/{dev,staging,prod}/variables.tf` declaring `env`, `aws_region` (default `us-east-1`), and per-environment tunable variables (Lambda memory, rate-limit burst/rate)
+  - [x] 2.4 Create `terraform/environments/{dev,staging,prod}/terraform.tfvars` with per-environment values
   - _Requirements: 13.2, 13.3, 13.4, 13.5_
 
 - [ ] 3. Terraform module — `auth` (Cognito)
