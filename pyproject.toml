@@ -59,6 +59,7 @@ ignore = ["S101"]  # allow assert in tests
 python_version = "3.12"
 strict = true
 ignore_missing_imports = false
+mypy_path = "src"
 
 # ---------------------------------------------------------------------------
 # bandit
