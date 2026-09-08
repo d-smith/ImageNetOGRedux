@@ -83,9 +83,9 @@ resource "aws_iam_policy" "ingestion_bedrock" {
         Action = ["bedrock:InvokeModel"]
         Resource = [
           # Amazon Titan Multimodal Embeddings G1 (embedding model)
-          "arn:aws:bedrock:${local.region}::foundation-model/amazon.titan-embed-image-v1",
+          "arn:aws:bedrock:${local.region}::foundation-model/${var.embed_model_id}",
           # Amazon Nova Lite (description model)
-          "arn:aws:bedrock:${local.region}::foundation-model/amazon.nova-lite-v1:0",
+          "arn:aws:bedrock:${local.region}::foundation-model/${var.describe_model_id}",
         ]
       }
     ]

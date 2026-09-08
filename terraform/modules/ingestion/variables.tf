@@ -40,3 +40,15 @@ variable "log_retention_days" {
   default     = 30
   description = "CloudWatch log group retention in days"
 }
+
+variable "embed_model_id" {
+  type        = string
+  default     = "amazon.titan-embed-image-v1"
+  description = "Bedrock model ID for image embedding (used to scope the InvokeModel IAM policy)"
+}
+
+variable "describe_model_id" {
+  type        = string
+  default     = "amazon.nova-lite-v1:0"
+  description = "Bedrock model ID for image description (used to scope the InvokeModel IAM policy)"
+}
