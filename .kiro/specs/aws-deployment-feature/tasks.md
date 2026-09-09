@@ -44,8 +44,8 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
 
 - [ ] 6. Terraform module — `api` (API Gateway + `api_handler` Lambda + IAM + usage plan)
   - [x] 6.1 Write `terraform/modules/api/iam.tf` defining `aws_iam_role.api_lambda_role` with `dynamodb:GetItem`, `dynamodb:Query`, `dynamodb:Scan` on both DynamoDB tables; `s3:GetObject` for presigned URL generation; `bedrock:InvokeModel` on Titan Embed; `s3vectors:QueryVectors` and `s3vectors:GetVectors`
-  - [ ] 6.2 Write `terraform/modules/api/lambda.tf` defining `aws_lambda_function.api_handler` (Python 3.12, proxy integration, environment variables `COLLECTIONS_TABLE`, `IMAGES_TABLE`, `COGNITO_USER_POOL_ID`, `EMBED_MODEL_ID`, `PRESIGNED_URL_TTL_SECONDS`)
-  - [ ] 6.3 Write `terraform/modules/api/apigw.tf` defining `aws_api_gateway_rest_api`, Cognito JWT `aws_api_gateway_authorizer` (300 s cache TTL), `aws_api_gateway_resource` and `aws_api_gateway_method` for all four route paths, `aws_api_gateway_integration` (Lambda proxy), Gateway Responses for `UNAUTHORIZED` and `THROTTLED` in structured JSON format
+  - [x] 6.2 Write `terraform/modules/api/lambda.tf` defining `aws_lambda_function.api_handler` (Python 3.12, proxy integration, environment variables `COLLECTIONS_TABLE`, `IMAGES_TABLE`, `COGNITO_USER_POOL_ID`, `EMBED_MODEL_ID`, `PRESIGNED_URL_TTL_SECONDS`)
+  - [x] 6.3 Write `terraform/modules/api/apigw.tf` defining `aws_api_gateway_rest_api`, Cognito JWT `aws_api_gateway_authorizer` (300 s cache TTL), `aws_api_gateway_resource` and `aws_api_gateway_method` for all four route paths, `aws_api_gateway_integration` (Lambda proxy), Gateway Responses for `UNAUTHORIZED` and `THROTTLED` in structured JSON format
   - [ ] 6.4 Write `terraform/modules/api/usage_plan.tf` defining `aws_api_gateway_usage_plan` with configurable burst and rate limits, wired to the API stage
   - [ ]* 6.5 Verify `terraform validate` passes for the `api` module
   - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 9.1, 9.2, 10.4, 13.1_
@@ -97,7 +97,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - _Requirements: 6.1, 6.5, 10.1_
 
 - [ ] 14. Route handler — `GET /v1/collections/{collection_name}/images`
-  - [ ] 14.1 Create `src/api_handler/routes/images.py`; implement `list_images(collection_name, event)`:
+  - [x] 14.1 Create `src/api_handler/routes/images.py`; implement `list_images(collection_name, event)`:
     - Validate collection exists (reuse `get_collection`); raise `CollectionNotFoundError` otherwise
     - Parse pagination, sort, `addedAfter`/`addedBefore`, and `description` params
     - **Date-only path:** Query `date_added_epoch-index` LSI with `KeyConditionExpression` and optional `FilterExpression`; apply offset/limit; project out internal fields
@@ -105,10 +105,11 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
     - **Combined path:** Same as description path but pass `filter={"date_added_epoch": {"$gte": ..., "$lte": ...}}` to `query_vectors`
     - Build and return paginated envelope; for vector search `total` = len(S3V result)
   - [ ]* 14.2 Write property tests in `tests/property/test_image_properties.py` — Property 11 (every image item has `key` + `dateAdded` + `description`, never `s3_bucket`/`s3vector_bucket`); Property 12 (date filter correctness + error on invalid/inverted range); Property 13 (all returned image keys exist in the collection); Property 14 (combined search respects date filter)
+    - **⚠️ Tooling limitation (recorded 2026-09-09):** `moto` (5.1.22, the pinned version) does **not** implement `s3vectors:QueryVectors`. Its s3vectors backend mocks `create_vector_bucket`, `create_index`, `put_vectors`, `get_vectors`, `list_vectors`, `delete_vectors`, but **not** `query_vectors`. Properties 13 and 14 (and the description-only / combined vector-search paths of `list_images`) therefore cannot be verified with `@mock_aws` alone. Options: (a) monkeypatch/stub the module-level `_s3vectors` client in `services/images.py` with a fake that returns canned `query_vectors` results, or (b) cover the vector-search paths via an integration test (epic 25) against a real dev environment. The date-only path (Property 12) and the field-privacy check (Property 11) mock fine under moto. Re-check newer `moto` releases for `query_vectors` support before choosing the workaround.
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
 - [ ] 15. Route handler — `GET /v1/collections/{collection_name}/images/{image_key}`
-  - [ ] 15.1 Implement `get_image(collection_name, image_key)` in `src/api_handler/routes/images.py`:
+  - [x] 15.1 Implement `get_image(collection_name, image_key)` in `src/api_handler/routes/images.py`:
     - `get_item` on `COLLECTIONS_TABLE` to retrieve `s3_bucket`; raise `CollectionNotFoundError` if absent
     - `get_item` on `IMAGES_TABLE` by `(collection_name, image_key)`; raise `ImageNotFoundError` if absent
     - Call `boto3.client('s3').generate_presigned_url('get_object', Params={'Bucket': s3_bucket, 'Key': image_key}, ExpiresIn=int(os.environ['PRESIGNED_URL_TTL_SECONDS']))` (default 300)
@@ -121,7 +122,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - Ensure all unit tests and property tests pass for epics 8–15 (`pytest tests/unit tests/property`). Ask the user if questions arise.
 
 - [ ] 17. Ingestion Lambda — `ingestion_embed`
-  - [ ] 17.1 Create `src/ingestion/embed.py` implementing `handler(event, context)`:
+  - [x] 17.1 Create `src/ingestion/embed.py` implementing `handler(event, context)`:
     - Read `collection_name`, `image_key`, `s3_bucket`, `s3vector_bucket`, `date_added_epoch` from the Step Functions event
     - `s3.get_object` → raw bytes → base64-encode
     - `bedrock_runtime.invoke_model(modelId=EMBED_MODEL_ID, body={"inputImage": b64, "embeddingConfig": {"outputEmbeddingLength": 1024}})`
@@ -130,7 +131,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - _Requirements: 12.1, 12.2_
 
 - [ ] 18. Ingestion Lambda — `ingestion_describe`
-  - [ ] 18.1 Create `src/ingestion/describe.py` implementing `handler(event, context)`:
+  - [x] 18.1 Create `src/ingestion/describe.py` implementing `handler(event, context)`:
     - Read fields from event; `s3.get_object` → raw bytes → base64-encode
     - Detect image format from the `image_key` extension (`jpeg`/`png` fallback to `jpeg`)
     - `bedrock_runtime.invoke_model(modelId=DESCRIBE_MODEL_ID, body={"messages": [{role: "user", content: [{image: {format, source: {bytes: b64}}}, {text: "Describe this image concisely in 1-3 sentences."}]}]})`
@@ -138,7 +139,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - _Requirements: 12.3_
 
 - [ ] 19. Ingestion Lambda — `ingestion_store`
-  - [ ] 19.1 Create `src/ingestion/store.py` implementing `handler(event, context)`:
+  - [x] 19.1 Create `src/ingestion/store.py` implementing `handler(event, context)`:
     - Read all required fields from event (`collection_name`, `image_key`, `s3_bucket`, `s3vector_bucket`, `date_added`, `date_added_epoch`, `description`)
     - `dynamodb.put_item(TableName=IMAGES_TABLE, Item={...})` with all required fields; `description` stored as-is (may be null)
     - Emit CloudWatch metric `IngestionSuccess` on completion
@@ -149,7 +150,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - Ensure all unit and property tests pass for epics 17–19 (`pytest tests/unit tests/property`). Ask the user if questions arise.
 
 - [ ] 21. Administrative collection script
-  - [ ] 21.1 Create `src/scripts/create_collection.py` implementing CLI via `argparse` with `--collection-name` and `--env` arguments:
+  - [x] 21.1 Create `src/scripts/create_collection.py` implementing CLI via `argparse` with `--collection-name` and `--env` arguments:
     - Validate collection name against `^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$` (3–48 chars, lowercase alphanumeric + hyphens); raise `ValueError` with descriptive message on failure
     - Create S3 image bucket: `{env}-imagenetog-{collection_name}-images` in `us-east-1`
     - Create S3 Vector bucket: `{env}-imagenetog-{collection_name}-vectors`
