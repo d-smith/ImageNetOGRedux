@@ -43,7 +43,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - _Requirements: 12.1, 12.2, 12.3, 12.4, 13.1_
 
 - [ ] 6. Terraform module — `api` (API Gateway + `api_handler` Lambda + IAM + usage plan)
-  - [ ] 6.1 Write `terraform/modules/api/iam.tf` defining `aws_iam_role.api_lambda_role` with `dynamodb:GetItem`, `dynamodb:Query`, `dynamodb:Scan` on both DynamoDB tables; `s3:GetObject` for presigned URL generation; `bedrock:InvokeModel` on Titan Embed; `s3vectors:QueryVectors` and `s3vectors:GetVectors`
+  - [x] 6.1 Write `terraform/modules/api/iam.tf` defining `aws_iam_role.api_lambda_role` with `dynamodb:GetItem`, `dynamodb:Query`, `dynamodb:Scan` on both DynamoDB tables; `s3:GetObject` for presigned URL generation; `bedrock:InvokeModel` on Titan Embed; `s3vectors:QueryVectors` and `s3vectors:GetVectors`
   - [ ] 6.2 Write `terraform/modules/api/lambda.tf` defining `aws_lambda_function.api_handler` (Python 3.12, proxy integration, environment variables `COLLECTIONS_TABLE`, `IMAGES_TABLE`, `COGNITO_USER_POOL_ID`, `EMBED_MODEL_ID`, `PRESIGNED_URL_TTL_SECONDS`)
   - [ ] 6.3 Write `terraform/modules/api/apigw.tf` defining `aws_api_gateway_rest_api`, Cognito JWT `aws_api_gateway_authorizer` (300 s cache TTL), `aws_api_gateway_resource` and `aws_api_gateway_method` for all four route paths, `aws_api_gateway_integration` (Lambda proxy), Gateway Responses for `UNAUTHORIZED` and `THROTTLED` in structured JSON format
   - [ ] 6.4 Write `terraform/modules/api/usage_plan.tf` defining `aws_api_gateway_usage_plan` with configurable burst and rate limits, wired to the API stage
@@ -81,16 +81,16 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - Ensure all unit tests and property tests for epics 8–10 pass (`pytest tests/unit tests/property -k "error or param or router"`). Ask the user if questions arise.
 
 - [ ] 12. Route handler — `GET /v1/collections`
-  - [ ] 12.1 Create `src/api_handler/routes/collections.py`; implement `list_collections(event)`:
+  - [x] 12.1 Create `src/api_handler/routes/collections.py`; implement `list_collections(event)`:
     - Call `parse_pagination` and `parse_sort(allowed=["name","created"])` and date-range params from `params.py`
     - Perform DynamoDB `scan` on `COLLECTIONS_TABLE` with field projection (exclude `s3_bucket`, `s3vector_bucket`)
     - Apply `name` prefix filter (case-insensitive) and `created_epoch` range filter in-Lambda
     - Apply offset/limit slice and build paginated envelope `{"items": [...], "total": N, "limit": L, "offset": O}`
-  - [ ]* 12.2 Write property tests in `tests/property/test_collection_properties.py` — Property 8 (every collection item has `name` + `created`, never `s3_bucket`/`s3vector_bucket`); Property 9 (`name` prefix filter returns exactly matching collections); Property 10 (date-range filter correctness + inverted-range rejection)
+  - [x]* 12.2 Write property tests in `tests/property/test_collection_properties.py` — Property 8 (every collection item has `name` + `created`, never `s3_bucket`/`s3vector_bucket`); Property 9 (`name` prefix filter returns exactly matching collections); Property 10 (date-range filter correctness + inverted-range rejection)
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
 - [ ] 13. Route handler — `GET /v1/collections/{collection_name}`
-  - [ ] 13.1 Implement `get_collection(collection_name)` in `src/api_handler/routes/collections.py`:
+  - [x] 13.1 Implement `get_collection(collection_name)` in `src/api_handler/routes/collections.py`:
     - DynamoDB `get_item` on `COLLECTIONS_TABLE` by `collection_name`
     - Raise `CollectionNotFoundError` if item is absent
     - Return `{"name": ..., "created": ...}` (exclude internal fields)
