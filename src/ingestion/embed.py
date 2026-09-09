@@ -24,20 +24,7 @@ logger = Logger()
 # Module-level clients (reused across warm invocations, per project standards).
 _s3 = boto3.client("s3")
 _bedrock_runtime = boto3.client("bedrock-runtime")
-
-# The ``s3vectors`` client is created lazily: the pinned boto3 (1.34.x) predates
-# the S3 Vectors service, so an eager module-level ``boto3.client("s3vectors")``
-# raises UnknownServiceError at import (which would crash the Lambda cold start).
-# The Lambda runtime ships a newer boto3 where the service is available.
-_s3vectors_client: Any = None
-
-
-def _s3vectors() -> Any:
-    """Return the module-cached ``s3vectors`` client, creating it on first use."""
-    global _s3vectors_client
-    if _s3vectors_client is None:
-        _s3vectors_client = boto3.client("s3vectors")  # type: ignore[call-overload]
-    return _s3vectors_client
+_s3vectors = boto3.client("s3vectors")
 
 
 # The S3 Vectors index name is fixed for every collection (see design.md).
@@ -75,7 +62,7 @@ def handler(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
     image_b64 = _fetch_image_base64(s3_bucket, image_key)
     embedding = _invoke_embedding_model(image_b64)
 
-    _s3vectors().put_vectors(
+    _s3vectors.put_vectors(
         vectorBucketName=s3vector_bucket,
         indexName=_VECTOR_INDEX_NAME,
         vectors=[

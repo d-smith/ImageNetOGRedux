@@ -157,7 +157,7 @@ def create_collection(collection_name: str, env: str) -> None:
     collections_table = f"{env}-imagenetog-collections"
 
     s3_client = boto3.client("s3", region_name=REGION)
-    s3vectors_client = boto3.client("s3vectors", region_name=REGION)  # type: ignore[call-overload]
+    s3vectors_client = boto3.client("s3vectors", region_name=REGION)
     dynamodb_resource = boto3.resource("dynamodb", region_name=REGION)
 
     logger.info(
