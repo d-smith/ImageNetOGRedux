@@ -36,9 +36,9 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
 
 - [ ] 5. Terraform module — `ingestion` (Step Functions + Lambda ingestion functions + EventBridge)
   - [ ] 5.1 Write `terraform/modules/ingestion/iam.tf` defining `aws_iam_role.ingestion_lambda_role` with `s3:GetObject` on image buckets, `bedrock:InvokeModel` on Titan Embed and Nova Lite, `s3vectors:PutVectors`/`CreateIndex`, and `dynamodb:PutItem` on the images table
-  - [ ] 5.2 Write `terraform/modules/ingestion/lambdas.tf` defining three `aws_lambda_function` resources (`ingestion_embed`, `ingestion_describe`, `ingestion_store`) with Python 3.12 runtime, environment variables (`IMAGES_TABLE`, `EMBED_MODEL_ID`, `DESCRIBE_MODEL_ID`), and the ingestion IAM role
-  - [ ] 5.3 Write `terraform/modules/ingestion/sfn.tf` defining `aws_sfn_state_machine` with the parallel embed/describe branch and sequential store step; include `Retry` (2 attempts, exponential backoff) and `Catch` blocks on each state
-  - [ ] 5.4 Write `terraform/modules/ingestion/eventbridge.tf` defining the `aws_cloudwatch_event_rule` for `s3:ObjectCreated` and the `aws_cloudwatch_event_target` wiring it to the Step Functions state machine
+  - [x] 5.2 Write `terraform/modules/ingestion/lambdas.tf` defining three `aws_lambda_function` resources (`ingestion_embed`, `ingestion_describe`, `ingestion_store`) with Python 3.12 runtime, environment variables (`IMAGES_TABLE`, `EMBED_MODEL_ID`, `DESCRIBE_MODEL_ID`), and the ingestion IAM role
+  - [x] 5.3 Write `terraform/modules/ingestion/sfn.tf` defining `aws_sfn_state_machine` with the parallel embed/describe branch and sequential store step; include `Retry` (2 attempts, exponential backoff) and `Catch` blocks on each state
+  - [x] 5.4 Write `terraform/modules/ingestion/eventbridge.tf` defining the `aws_cloudwatch_event_rule` for `s3:ObjectCreated` and the `aws_cloudwatch_event_target` wiring it to the Step Functions state machine
   - [ ]* 5.5 Verify `terraform validate` passes for the `ingestion` module
   - _Requirements: 12.1, 12.2, 12.3, 12.4, 13.1_
 
@@ -72,7 +72,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
 
 - [ ] 10. Shared API library — router setup and method/version enforcement
   - [ ] 10.1 Create `src/api_handler/app.py` initialising `APIGatewayRestResolver` from AWS Lambda Powertools; register the router; add a before-request hook that raises `MethodNotAllowedError` for any non-GET method reaching a registered path; add a path-prefix guard that returns 404 for paths not starting with `/v1/`
-  - [ ] 10.2 Create `src/api_handler/lambda_function.py` as the Lambda entry-point; import the runtime version guard from `__init__.py`, wire the Powertools app, and expose `handler(event, context)`
+  - [x] 10.2 Create `src/api_handler/lambda_function.py` as the Lambda entry-point; import the runtime version guard from `__init__.py`, wire the Powertools app, and expose `handler(event, context)`
   - [x]* 10.3 Write unit tests in `tests/unit/test_router.py`: verify 405 for POST/PUT/DELETE/PATCH on each route; verify 404 for `/v2/`, `/`, `/collections`
   - [x]* 10.4 Write property tests in `tests/property/test_router_properties.py` — Property 1 (arbitrary non-GET method on any registered path → 405); Property 2 (arbitrary path not starting with `/v1/` → 404)
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2_
