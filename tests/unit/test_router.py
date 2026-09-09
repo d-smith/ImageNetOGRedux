@@ -13,23 +13,12 @@ import json
 import pytest
 
 from api_handler import app as app_module
+from api_handler.exceptions import MethodNotAllowedError
 
-
-# Register a representative GET route once so there is a "registered path".
-# The real route handlers (tasks 12+) are not yet implemented; this stand-in
-# lets us exercise the method/version guards in isolation.
-def _register_stub_route() -> None:
-    resolver = app_module.app
-    existing = {r.path for r in resolver._static_routes + resolver._dynamic_routes}  # type: ignore[attr-defined]
-    if "/v1/collections" in existing:
-        return
-
-    @resolver.get("/v1/collections")
-    def _list_collections_stub() -> dict:  # pragma: no cover - routing target
-        return {"items": []}
-
-
-_register_stub_route()
+# Importing the routes package registers the real handlers on the resolver.
+# ``app.py`` already imports them; we import explicitly here to make the
+# dependency obvious and independent of import order.
+import api_handler.routes.collections  # noqa: F401  isort: skip
 
 
 def _event(method: str, path: str) -> dict:
@@ -51,25 +40,33 @@ def _resolve(method: str, path: str) -> dict:
 class TestMethodEnforcement:
     @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])
     def test_non_get_on_registered_path_returns_405(self, method: str) -> None:
+        # Method guard runs before routing, so no AWS access occurs.
         response = _resolve(method, "/v1/collections")
         assert response["statusCode"] == 405
         body = json.loads(response["body"])
         assert body["error"] == "method.not_allowed"
 
-    def test_get_on_registered_path_is_not_405(self) -> None:
-        response = _resolve("GET", "/v1/collections")
-        assert response["statusCode"] != 405
+    def test_get_on_registered_path_passes_method_guard(self) -> None:
+        # A GET must NOT trip the method guard. Asserting the guard directly
+        # avoids executing the real (AWS-backed) handler in a unit test.
+        app_module.check_method(_event("GET", "/v1/collections"))  # must not raise
+
+    @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])
+    def test_non_get_trips_method_guard(self, method: str) -> None:
+        with pytest.raises(MethodNotAllowedError):
+            app_module.check_method(_event(method, "/v1/collections"))
 
 
 class TestVersionPrefixEnforcement:
     @pytest.mark.parametrize("path", ["/v2/collections", "/", "/collections"])
     def test_non_v1_path_returns_404(self, path: str) -> None:
+        # Version guard runs before routing, so no AWS access occurs.
         response = _resolve("GET", path)
         assert response["statusCode"] == 404
         body = json.loads(response["body"])
         assert body["error"] == "resource.not_found"
 
-    def test_v1_prefix_not_rejected_by_version_guard(self) -> None:
-        # A GET on a /v1/ path that is registered should not be a 404.
-        response = _resolve("GET", "/v1/collections")
-        assert response["statusCode"] != 404
+    def test_v1_prefix_passes_version_guard(self) -> None:
+        # A registered /v1/ path must NOT be rejected by the version guard.
+        # Asserting the guard directly avoids running the AWS-backed handler.
+        app_module._check_version_prefix(_event("GET", "/v1/collections"))  # must not raise

@@ -127,3 +127,14 @@ def resolve(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
 
     result: dict[str, Any] = app.resolve(event, context)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Route registration
+# ---------------------------------------------------------------------------
+# Importing the route modules triggers their ``@app.get(...)`` decorators,
+# which attach the handlers to the ``app`` resolver above. These imports live
+# at the bottom of the module (after ``app`` is defined) to avoid circular
+# imports, and are re-exported only for their registration side effect.
+from api_handler.routes import collections as _collections_routes  # noqa: E402, F401
+from api_handler.routes import images as _images_routes  # noqa: E402, F401

@@ -34,6 +34,10 @@ _MAX_LIMIT: int = 100
 # admin collection script and the security-patterns steering.
 _COLLECTION_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$")
 
+# Image keys (S3 object keys) must not exceed this length or contain path
+# traversal sequences (see security-patterns steering).
+_MAX_IMAGE_KEY_LENGTH: int = 1024
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -263,4 +267,29 @@ def validate_collection_name(collection_name: str) -> None:
             "collection_name",
             "must be 3–48 lowercase alphanumeric characters or hyphens, "
             "starting and ending with an alphanumeric character",
+        )
+
+
+def validate_image_key(image_key: str) -> None:
+    """Validate an image-key path parameter before it touches any AWS call.
+
+    Rejects path-traversal sequences and over-long keys (per the
+    security-patterns steering). A presigned URL must never be generated for a
+    key that could escape its intended prefix or that exceeds the S3 object-key
+    length limit.
+
+    Args:
+        image_key: The raw image key from the request path.
+
+    Raises:
+        InvalidParameterError: If ``image_key`` contains a ``..`` path
+            traversal sequence, or if it exceeds
+            ``_MAX_IMAGE_KEY_LENGTH`` characters.
+    """
+    if ".." in image_key:
+        raise InvalidParameterError("image_key", "Path traversal sequences are not permitted")
+    if len(image_key) > _MAX_IMAGE_KEY_LENGTH:
+        raise InvalidParameterError(
+            "image_key",
+            f"Key exceeds maximum length of {_MAX_IMAGE_KEY_LENGTH} characters",
         )
