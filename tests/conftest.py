@@ -31,6 +31,10 @@ os.environ.setdefault("IMAGES_TABLE", "test-imagenetog-images")
 os.environ.setdefault("COGNITO_USER_POOL_ID", "us-east-1_testpool")
 os.environ.setdefault("EMBED_MODEL_ID", "amazon.titan-embed-image-v1")
 os.environ.setdefault("PRESIGNED_URL_TTL_SECONDS", "300")
+# Region for module-level boto3 clients. In Lambda this is injected by the
+# runtime as AWS_REGION; locally and under moto we default it here.
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+os.environ.setdefault("AWS_REGION", "us-east-1")
 
 # ---------------------------------------------------------------------------
 # Hypothesis profile — minimum 100 examples per project standard.

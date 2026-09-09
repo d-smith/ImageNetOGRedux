@@ -14,6 +14,7 @@ All functions accept the raw API Gateway proxy event dict and extract
 ``queryStringParameters`` themselves, defaulting missing keys safely.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import date
 
@@ -27,6 +28,11 @@ _DEFAULT_LIMIT: int = 20
 _DEFAULT_OFFSET: int = 0
 _MIN_LIMIT: int = 1
 _MAX_LIMIT: int = 100
+
+# Collection names: lowercase alphanumeric + hyphens, 3–48 chars, must start
+# and end with an alphanumeric character. Mirrors the pattern enforced by the
+# admin collection script and the security-patterns steering.
+_COLLECTION_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$")
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +241,26 @@ def parse_date_range(
         )
 
     return DateRangeParams(after=after, before=before)
+
+
+def validate_collection_name(collection_name: str) -> None:
+    """Validate a collection-name path parameter against the naming pattern.
+
+    Collection names must be lowercase alphanumeric plus hyphens, 3–48
+    characters, and must begin and end with an alphanumeric character. This
+    guard runs before the value is used in any DynamoDB key or S3 bucket name
+    (per the security-patterns steering).
+
+    Args:
+        collection_name: The raw collection name from the request path.
+
+    Raises:
+        InvalidParameterError: If ``collection_name`` does not match the
+            required pattern.
+    """
+    if not _COLLECTION_NAME_RE.match(collection_name):
+        raise InvalidParameterError(
+            "collection_name",
+            "must be 3–48 lowercase alphanumeric characters or hyphens, "
+            "starting and ending with an alphanumeric character",
+        )
