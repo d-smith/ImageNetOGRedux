@@ -36,9 +36,9 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
 
 - [ ] 5. Terraform module — `ingestion` (Step Functions + Lambda ingestion functions + EventBridge)
   - [ ] 5.1 Write `terraform/modules/ingestion/iam.tf` defining `aws_iam_role.ingestion_lambda_role` with `s3:GetObject` on image buckets, `bedrock:InvokeModel` on Titan Embed and Nova Lite, `s3vectors:PutVectors`/`CreateIndex`, and `dynamodb:PutItem` on the images table
-  - [ ] 5.2 Write `terraform/modules/ingestion/lambdas.tf` defining three `aws_lambda_function` resources (`ingestion_embed`, `ingestion_describe`, `ingestion_store`) with Python 3.12 runtime, environment variables (`IMAGES_TABLE`, `EMBED_MODEL_ID`, `DESCRIBE_MODEL_ID`), and the ingestion IAM role
-  - [ ] 5.3 Write `terraform/modules/ingestion/sfn.tf` defining `aws_sfn_state_machine` with the parallel embed/describe branch and sequential store step; include `Retry` (2 attempts, exponential backoff) and `Catch` blocks on each state
-  - [ ] 5.4 Write `terraform/modules/ingestion/eventbridge.tf` defining the `aws_cloudwatch_event_rule` for `s3:ObjectCreated` and the `aws_cloudwatch_event_target` wiring it to the Step Functions state machine
+  - [x] 5.2 Write `terraform/modules/ingestion/lambdas.tf` defining three `aws_lambda_function` resources (`ingestion_embed`, `ingestion_describe`, `ingestion_store`) with Python 3.12 runtime, environment variables (`IMAGES_TABLE`, `EMBED_MODEL_ID`, `DESCRIBE_MODEL_ID`), and the ingestion IAM role
+  - [x] 5.3 Write `terraform/modules/ingestion/sfn.tf` defining `aws_sfn_state_machine` with the parallel embed/describe branch and sequential store step; include `Retry` (2 attempts, exponential backoff) and `Catch` blocks on each state
+  - [x] 5.4 Write `terraform/modules/ingestion/eventbridge.tf` defining the `aws_cloudwatch_event_rule` for `s3:ObjectCreated` and the `aws_cloudwatch_event_target` wiring it to the Step Functions state machine
   - [ ]* 5.5 Verify `terraform validate` passes for the `ingestion` module
   - _Requirements: 12.1, 12.2, 12.3, 12.4, 13.1_
 
@@ -60,21 +60,21 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - [x] 8.1 Create `src/api_handler/exceptions.py` defining `CollectionNotFoundError`, `ImageNotFoundError`, `InvalidParameterError`, `MethodNotAllowedError` (all subclassing a base `APIError` with `http_status` and `error_token` attributes)
   - [x] 8.2 Create `src/api_handler/responses.py` with helpers `ok(body)`, `error_response(status, token, message)` that always set `Content-Type: application/json`; the error helper must produce `{"error": "<token>", "message": "<msg>"}` with no stack trace
   - [ ] 8.3 Create `src/api_handler/middleware.py` with a Powertools middleware (or exception handler decorator) that catches each exception class and calls `error_response` with the mapped status and token; the catch-all for bare `Exception` logs the full traceback to CloudWatch and returns a 500 with `server.error`
-  - [ ]* 8.4 Write unit tests in `tests/unit/test_error_handler.py`: verify correct JSON shape, correct token, no traceback in 500 body, correct `Content-Type` header
-  - [ ]* 8.5 Write property test `tests/property/test_error_properties.py` — Property 17 (arbitrary error conditions produce `error` + `message` JSON matching `^[a-z_]+\.[a-z_]+$`); Property 18 (requests with invalid parameters produce a 400 body naming each invalid param)
+  - [x]* 8.4 Write unit tests in `tests/unit/test_error_handler.py`: verify correct JSON shape, correct token, no traceback in 500 body, correct `Content-Type` header
+  - [x]* 8.5 Write property test `tests/property/test_error_properties.py` — Property 17 (arbitrary error conditions produce `error` + `message` JSON matching `^[a-z_]+\.[a-z_]+$`); Property 18 (requests with invalid parameters produce a 400 body naming each invalid param)
   - _Requirements: 10.3, 10.5, 10.6_
 
 - [ ] 9. Shared API library — query parameter parsing and validation
   - [ ] 9.1 Create `src/api_handler/params.py` with `parse_pagination(event)` returning validated `(limit: int, offset: int)` (defaults 20/0; raises `InvalidParameterError` if `limit > 100` or non-integer); `parse_sort(event, allowed_fields)` raising `InvalidParameterError` for unknown sort fields; `parse_date(value, param_name)` raising `InvalidParameterError` for non-ISO 8601 strings; `parse_date_range(after, before)` raising `InvalidParameterError` when after > before
-  - [ ]* 9.2 Write unit tests in `tests/unit/test_param_validation.py`: boundary values (limit=1, 100, 101), invalid sort fields, invalid date strings, inverted date ranges
-  - [ ]* 9.3 Write property tests in `tests/property/test_pagination_properties.py` — Property 4 (slice size = `min(limit, max(0, N-offset))`); Property 5 (total/limit/offset fields accurate); Property 6 (`limit > 100` → 400, `limit` in `[1,100]` → accepted); Property 7 (non-valid sort fields → 400)
+  - [x]* 9.2 Write unit tests in `tests/unit/test_param_validation.py`: boundary values (limit=1, 100, 101), invalid sort fields, invalid date strings, inverted date ranges
+  - [x]* 9.3 Write property tests in `tests/property/test_pagination_properties.py` — Property 4 (slice size = `min(limit, max(0, N-offset))`); Property 5 (total/limit/offset fields accurate); Property 6 (`limit > 100` → 400, `limit` in `[1,100]` → accepted); Property 7 (non-valid sort fields → 400)
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
 
 - [ ] 10. Shared API library — router setup and method/version enforcement
   - [ ] 10.1 Create `src/api_handler/app.py` initialising `APIGatewayRestResolver` from AWS Lambda Powertools; register the router; add a before-request hook that raises `MethodNotAllowedError` for any non-GET method reaching a registered path; add a path-prefix guard that returns 404 for paths not starting with `/v1/`
-  - [ ] 10.2 Create `src/api_handler/lambda_function.py` as the Lambda entry-point; import the runtime version guard from `__init__.py`, wire the Powertools app, and expose `handler(event, context)`
-  - [ ]* 10.3 Write unit tests in `tests/unit/test_router.py`: verify 405 for POST/PUT/DELETE/PATCH on each route; verify 404 for `/v2/`, `/`, `/collections`
-  - [ ]* 10.4 Write property tests in `tests/property/test_router_properties.py` — Property 1 (arbitrary non-GET method on any registered path → 405); Property 2 (arbitrary path not starting with `/v1/` → 404)
+  - [x] 10.2 Create `src/api_handler/lambda_function.py` as the Lambda entry-point; import the runtime version guard from `__init__.py`, wire the Powertools app, and expose `handler(event, context)`
+  - [x]* 10.3 Write unit tests in `tests/unit/test_router.py`: verify 405 for POST/PUT/DELETE/PATCH on each route; verify 404 for `/v2/`, `/`, `/collections`
+  - [x]* 10.4 Write property tests in `tests/property/test_router_properties.py` — Property 1 (arbitrary non-GET method on any registered path → 405); Property 2 (arbitrary path not starting with `/v1/` → 404)
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2_
 
 - [ ] 11. Checkpoint — core library complete

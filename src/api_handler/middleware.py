@@ -57,11 +57,13 @@ def exception_handler(func: Callable[..., dict[str, Any]]) -> Callable[..., dict
             return func(*args, **kwargs)
         except APIError as exc:
             # Known domain error — no traceback needed, status/token already set.
+            # NB: do not pass ``message=`` — it collides with the reserved
+            # ``LogRecord.message`` attribute and raises KeyError at log time.
             logger.warning(
                 "API error",
                 http_status=exc.http_status,
                 error_token=exc.error_token,
-                message=exc.message,
+                error_message=exc.message,
             )
             return error_response(exc.http_status, exc.error_token, exc.message)
         except Exception:
