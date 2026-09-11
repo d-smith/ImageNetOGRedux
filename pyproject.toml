@@ -35,23 +35,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 # ---------------------------------------------------------------------------
-# coverage.py
-# ---------------------------------------------------------------------------
-[tool.coverage.report]
-# Lines matching any of these regexes are excluded from coverage measurement.
-# The first entry restores coverage.py's default pragma (defining exclude_lines
-# overrides the built-in default, so we must re-add it). The second is a
-# project-specific, self-documenting marker for code that cannot be exercised
-# by the unit/property suite because `moto` does not implement
-# `s3vectors:QueryVectors` (see task 14.2). Prefer this explicit marker over a
-# bare `# pragma: no cover` so every exclusion is intentional and greppable.
-exclude_lines = [
-    "pragma: no cover",
-    "pragma: no cover - s3vectors QueryVectors unmockable",
-]
-
-
-# ---------------------------------------------------------------------------
 # Hypothesis
 # ---------------------------------------------------------------------------
 [tool.hypothesis]

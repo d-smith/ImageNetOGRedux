@@ -1,4 +1,4 @@
-"""Property tests for the images list service — date-only path (task 14.2).
+"""Property tests for the images list service (task 14.2).
 
 * Property 11: every image item returned by ``list_images`` has exactly ``key``,
   ``dateAdded``, and ``description`` (which may be ``None``) — and never the
@@ -8,14 +8,20 @@
   are rejected earlier at the parameter-validation layer — see
   ``tests/unit/test_param_validation.py::TestDateRange`` — so only valid ranges
   reach ``list_images``.)
+* Property 13: every image key returned by the description (vector) search
+  exists as a real image record within the collection — the result set is a
+  subset of the collection's images.
+* Property 14: the combined (description + date range) search returns only
+  images whose ``dateAdded`` falls within the range.
 
-Deferred: Properties 13 and 14 (description / combined vector search) depend on
-``s3vectors:QueryVectors``, which moto 5.1.22 does NOT implement. They are
-handled separately per the note on task 14.2 in
-``.kiro/specs/aws-deployment-feature/tasks.md``. Only the date-only path and the
-field-privacy checks are exercised here.
+Vector-search mocking: moto (5.1.22) does NOT implement ``s3vectors:QueryVectors``,
+so Properties 13 and 14 stub the service's module-level ``_s3vectors`` client
+with a fake ``query_vectors`` that mirrors the real contract (returns a ranked
+subset of keys and honours the ``date_added_epoch`` ``$gte``/``$lte`` filter),
+and stub ``_embed_description`` to avoid a real Bedrock call. DynamoDB stays
+under moto, so ``batch_get_item`` hydration and the containment check are real.
 
-_Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
+_Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
 Implementation note: the images service binds its DynamoDB clients at import
 time. We activate moto once for the module, create the collections + images
@@ -185,3 +191,124 @@ def test_date_range_filter(dates: list[date], lo: date, hi: date) -> None:
     returned = {item["key"] for item in result["items"]}
     expected = {key for key, d in keys_by_date if after <= d <= before}
     assert returned == expected
+
+
+# ---------------------------------------------------------------------------
+# Vector-search path (Properties 13 & 14)
+#
+# moto does not implement s3vectors:QueryVectors, so we stub the service's
+# module-level ``_s3vectors`` client with a fake whose ``query_vectors`` mirrors
+# the real contract: it returns a ranked subset of the vectors that were
+# "indexed" for the collection, honouring the ``date_added_epoch`` metadata
+# filter (``$gte`` / ``$lte``) exactly as the real S3 Vectors service would.
+# DynamoDB stays under moto, so ``batch_get_item`` hydration is real and the
+# containment assertion (Property 13) is meaningful.
+# ---------------------------------------------------------------------------
+
+
+class _FakeS3Vectors:
+    """Minimal stand-in for the s3vectors client's ``query_vectors``.
+
+    Args:
+        indexed: The (image_key, date_added_epoch) pairs available in the
+            index, in the ranked order the query should return them.
+    """
+
+    def __init__(self, indexed: list[tuple[str, int]]) -> None:
+        self._indexed = indexed
+
+    def query_vectors(
+        self,
+        *,
+        vectorBucketName: str,  # noqa: N803 — boto3 param name
+        indexName: str,  # noqa: N803
+        topK: int,  # noqa: N803
+        queryVector: dict[str, Any],  # noqa: N803
+        filter: dict[str, Any] | None = None,  # noqa: A002 — boto3 param name
+    ) -> dict[str, Any]:
+        candidates = self._indexed
+        if filter is not None:
+            bounds = filter["date_added_epoch"]
+            lo = bounds.get("$gte")
+            hi = bounds.get("$lte")
+            candidates = [
+                (k, e)
+                for (k, e) in candidates
+                if (lo is None or e >= lo) and (hi is None or e <= hi)
+            ]
+        selected = candidates[:topK]
+        return {"vectors": [{"key": k} for k, _ in selected]}
+
+
+def _install_vector_stub(monkeypatch: pytest.MonkeyPatch, indexed: list[tuple[str, int]]) -> None:
+    """Point the service's ``_s3vectors`` accessor at a fake, and stub embedding."""
+    fake = _FakeS3Vectors(indexed)
+    monkeypatch.setattr(_svc, "_s3vectors", lambda: fake)
+    # Avoid a real Bedrock embed call; the fake ignores the query vector anyway.
+    monkeypatch.setattr(_svc, "_embed_description", lambda _description: [0.0] * 1024)
+
+
+@settings(deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(dates=st.lists(_ISO_DATE, min_size=1, max_size=10))
+def test_vector_search_result_containment(
+    dates: list[date], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Feature: aws-deployment-feature, Property 13: vector search result containment
+    _clear_tables()
+    _put_collection()
+
+    indexed: list[tuple[str, int]] = []
+    for idx, d in enumerate(dates):
+        key = f"img-{idx}.jpg"
+        _put_image(key, d)
+        indexed.append((key, _epoch(d)))
+    valid_keys = {k for k, _ in indexed}
+
+    _install_vector_stub(monkeypatch, indexed)
+
+    result = _svc.list_images(
+        collection_name=_COLLECTION,
+        pagination=PaginationParams(limit=100, offset=0),
+        date_range=DateRangeParams(after=None, before=None),
+        description="a mountain at dusk",
+    )
+
+    returned = {item["key"] for item in result["items"]}
+    # Every returned key exists as a real image record in the collection.
+    assert returned <= valid_keys
+    # Field privacy still holds on the vector-search path.
+    for item in result["items"]:
+        assert set(item.keys()) == {"key", "dateAdded", "description"}
+
+
+@settings(deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(dates=st.lists(_ISO_DATE, min_size=1, max_size=10), lo=_ISO_DATE, hi=_ISO_DATE)
+def test_combined_search_respects_date_filter(
+    dates: list[date], lo: date, hi: date, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Feature: aws-deployment-feature, Property 14: combined search respects date filter
+    _clear_tables()
+    _put_collection()
+    after, before = (lo, hi) if lo <= hi else (hi, lo)
+
+    indexed: list[tuple[str, int]] = []
+    dates_by_key: dict[str, date] = {}
+    for idx, d in enumerate(dates):
+        key = f"img-{idx}.jpg"
+        _put_image(key, d)
+        indexed.append((key, _epoch(d)))
+        dates_by_key[key] = d
+
+    _install_vector_stub(monkeypatch, indexed)
+
+    result = _svc.list_images(
+        collection_name=_COLLECTION,
+        pagination=PaginationParams(limit=100, offset=0),
+        date_range=DateRangeParams(after=after, before=before),
+        description="a mountain at dusk",
+    )
+
+    # Every returned image's dateAdded falls within the requested range.
+    for item in result["items"]:
+        d = dates_by_key[item["key"]]
+        assert after <= d <= before
