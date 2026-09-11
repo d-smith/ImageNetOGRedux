@@ -1,0 +1,8 @@
+# Runtime dependencies for the api_handler Lambda package.
+#
+# Pinned to match the versions in the project's pyproject.toml. The AWS Lambda
+# Python runtime bundles its own boto3/botocore, but we pin an explicit version
+# here so the deployed package uses a boto3 new enough to include the S3 Vectors
+# (s3vectors) service, which the runtime's bundled version may lag behind.
+aws-lambda-powertools==2.43.1
+boto3==1.40.68
