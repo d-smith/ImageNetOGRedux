@@ -146,11 +146,7 @@ def list_images(
 
     if description is None:
         return _list_by_date(collection_name, pagination, date_range)
-    # The vector-search path cannot be exercised under moto (see note in
-    # _search_by_description); exclude this dispatch line from coverage too.
-    return _search_by_description(  # pragma: no cover - s3vectors QueryVectors unmockable
-        collection_name, pagination, date_range, description
-    )
+    return _search_by_description(collection_name, pagination, date_range, description)
 
 
 def get_presigned_url(collection_name: str, image_key: str) -> dict[str, str]:
@@ -267,7 +263,7 @@ def _query_all(key_condition: Any) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def _search_by_description(  # pragma: no cover - s3vectors QueryVectors unmockable
+def _search_by_description(
     collection_name: str,
     pagination: PaginationParams,
     date_range: DateRangeParams,
@@ -308,10 +304,10 @@ def _search_by_description(  # pragma: no cover - s3vectors QueryVectors unmocka
         query_kwargs["filter"] = date_filter
 
     # NOTE (test mocking): moto (pinned 5.1.22) does NOT implement
-    # s3vectors:QueryVectors. Under @mock_aws this call falls through to real
-    # AWS. Tests covering this path must stub/monkeypatch the module-level
-    # ``_s3vectors`` client or run as an integration test. See task 14.2 in
-    # .kiro/specs/aws-deployment-feature/tasks.md.
+    # s3vectors:QueryVectors, so tests cannot exercise this call via @mock_aws.
+    # The vector-search property tests stub the module-level ``_s3vectors``
+    # client's ``query_vectors`` instead (see tests/property/test_image_properties.py,
+    # Properties 13 & 14).
     response = _s3vectors().query_vectors(**query_kwargs)
     vectors = response.get("vectors", [])
     keys = [str(v["key"]) for v in vectors]

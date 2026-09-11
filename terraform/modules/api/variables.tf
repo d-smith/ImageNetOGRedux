@@ -78,3 +78,15 @@ variable "api_stage_name" {
   default     = "v1"
   description = "API Gateway stage name"
 }
+
+variable "api_gateway_rate_limit" {
+  type        = number
+  default     = 100
+  description = "Steady-state requests per second for the API Gateway usage plan"
+}
+
+variable "api_gateway_burst_limit" {
+  type        = number
+  default     = 200
+  description = "Maximum burst requests for the API Gateway usage plan"
+}

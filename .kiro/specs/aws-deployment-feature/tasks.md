@@ -46,12 +46,12 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - [x] 6.1 Write `terraform/modules/api/iam.tf` defining `aws_iam_role.api_lambda_role` with `dynamodb:GetItem`, `dynamodb:Query`, `dynamodb:Scan` on both DynamoDB tables; `s3:GetObject` for presigned URL generation; `bedrock:InvokeModel` on Titan Embed; `s3vectors:QueryVectors` and `s3vectors:GetVectors`
   - [x] 6.2 Write `terraform/modules/api/lambda.tf` defining `aws_lambda_function.api_handler` (Python 3.12, proxy integration, environment variables `COLLECTIONS_TABLE`, `IMAGES_TABLE`, `COGNITO_USER_POOL_ID`, `EMBED_MODEL_ID`, `PRESIGNED_URL_TTL_SECONDS`)
   - [x] 6.3 Write `terraform/modules/api/apigw.tf` defining `aws_api_gateway_rest_api`, Cognito JWT `aws_api_gateway_authorizer` (300 s cache TTL), `aws_api_gateway_resource` and `aws_api_gateway_method` for all four route paths, `aws_api_gateway_integration` (Lambda proxy), Gateway Responses for `UNAUTHORIZED` and `THROTTLED` in structured JSON format
-  - [ ] 6.4 Write `terraform/modules/api/usage_plan.tf` defining `aws_api_gateway_usage_plan` with configurable burst and rate limits, wired to the API stage
+  - [x] 6.4 Write `terraform/modules/api/usage_plan.tf` defining `aws_api_gateway_usage_plan` with configurable burst and rate limits, wired to the API stage
   - [ ]* 6.5 Verify `terraform validate` passes for the `api` module
   - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 9.1, 9.2, 10.4, 13.1_
 
 - [ ] 7. Terraform root modules — wire all modules into environments
-  - [ ] 7.1 Write `terraform/environments/dev/main.tf` calling all four modules (`auth`, `storage`, `ingestion`, `api`) with dev-appropriate variable values; also add `aws_iam_role.admin_role` with the permissions described in the design
+  - [x] 7.1 Write `terraform/environments/dev/main.tf` calling all four modules (`auth`, `storage`, `ingestion`, `api`) with dev-appropriate variable values; also add `aws_iam_role.admin_role` with the permissions described in the design
   - [ ] 7.2 Replicate the same root module structure for `staging` and `prod` environments
   - [ ]* 7.3 Run `terraform validate` and `terraform plan -detailed-exitcode` (with a mocked/stub backend) for each environment; confirm plan exit code 2 (changes pending, no errors)
   - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
@@ -104,8 +104,8 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
     - **Description-only path:** Call Bedrock `invoke_model(amazon.titan-embed-image-v1, inputText=description)`; call `s3vectors.query_vectors(topK=limit, queryVector=vec)`; `batch_get_item` from `IMAGES_TABLE`; project out internal fields
     - **Combined path:** Same as description path but pass `filter={"date_added_epoch": {"$gte": ..., "$lte": ...}}` to `query_vectors`
     - Build and return paginated envelope; for vector search `total` = len(S3V result)
-  - [ ]* 14.2 Write property tests in `tests/property/test_image_properties.py` — Property 11 (every image item has `key` + `dateAdded` + `description`, never `s3_bucket`/`s3vector_bucket`); Property 12 (date filter correctness + error on invalid/inverted range); Property 13 (all returned image keys exist in the collection); Property 14 (combined search respects date filter)
-    - **⚠️ Tooling limitation (recorded 2026-09-09):** `moto` (5.1.22, the pinned version) does **not** implement `s3vectors:QueryVectors`. Its s3vectors backend mocks `create_vector_bucket`, `create_index`, `put_vectors`, `get_vectors`, `list_vectors`, `delete_vectors`, but **not** `query_vectors`. Properties 13 and 14 (and the description-only / combined vector-search paths of `list_images`) therefore cannot be verified with `@mock_aws` alone. Options: (a) monkeypatch/stub the module-level `_s3vectors` client in `services/images.py` with a fake that returns canned `query_vectors` results, or (b) cover the vector-search paths via an integration test (epic 25) against a real dev environment. The date-only path (Property 12) and the field-privacy check (Property 11) mock fine under moto. Re-check newer `moto` releases for `query_vectors` support before choosing the workaround.
+  - [x]* 14.2 Write property tests in `tests/property/test_image_properties.py` — Property 11 (every image item has `key` + `dateAdded` + `description`, never `s3_bucket`/`s3vector_bucket`); Property 12 (date filter correctness + error on invalid/inverted range); Property 13 (all returned image keys exist in the collection); Property 14 (combined search respects date filter)
+    - **Resolved (2026-09-11):** All four properties are DONE. Properties 11 & 12 (date-only path) run under `@mock_aws`. Because `moto` (5.1.22) does **not** implement `s3vectors:QueryVectors`, Properties 13 & 14 stub the service's module-level `_s3vectors` client with a fake `query_vectors` that mirrors the real contract (returns a ranked key subset and honours the `date_added_epoch` `$gte`/`$lte` filter) and stub `_embed_description`; DynamoDB stays under moto so `batch_get_item` hydration and the containment check are real. The earlier coverage pragmas on `_search_by_description` were removed — the vector-search path is now measured (`services/images.py` ~91%). Re-check newer `moto` releases for native `query_vectors` support to replace the stub.
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
 - [ ] 15. Route handler — `GET /v1/collections/{collection_name}/images/{image_key}`
@@ -114,8 +114,8 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
     - `get_item` on `IMAGES_TABLE` by `(collection_name, image_key)`; raise `ImageNotFoundError` if absent
     - Call `boto3.client('s3').generate_presigned_url('get_object', Params={'Bucket': s3_bucket, 'Key': image_key}, ExpiresIn=int(os.environ['PRESIGNED_URL_TTL_SECONDS']))` (default 300)
     - Return `{"key": image_key, "url": presigned_url}`
-  - [ ]* 15.2 Write unit tests in `tests/unit/test_presigned_url.py`: verify `ExpiresIn=300` passed to boto3 mock; verify 404 for missing collection; verify 404 for missing image key
-  - [ ]* 15.3 Write property tests in `tests/property/test_presigned_properties.py` — Property 15 (valid collection + valid image_key → 200 with non-empty URL); Property 16 (any valid image lookup → `ExpiresIn=300` in mock boto3 call)
+  - [x]* 15.2 Write unit tests in `tests/unit/test_presigned_url.py`: verify `ExpiresIn=300` passed to boto3 mock; verify 404 for missing collection; verify 404 for missing image key
+  - [x]* 15.3 Write property tests in `tests/property/test_presigned_properties.py` — Property 15 (valid collection + valid image_key → 200 with non-empty URL); Property 16 (any valid image lookup → `ExpiresIn=300` in mock boto3 call)
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 10.1, 10.2_
 
 - [ ] 16. Checkpoint — all API route handlers complete
@@ -143,7 +143,7 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
     - Read all required fields from event (`collection_name`, `image_key`, `s3_bucket`, `s3vector_bucket`, `date_added`, `date_added_epoch`, `description`)
     - `dynamodb.put_item(TableName=IMAGES_TABLE, Item={...})` with all required fields; `description` stored as-is (may be null)
     - Emit CloudWatch metric `IngestionSuccess` on completion
-  - [ ]* 19.2 Write property test `tests/property/test_ingestion_properties.py` — Property 19 (for any generated `(collection, image)` pair, after mocked ingestion workflow execution the DynamoDB record contains all required non-null fields: `collection_name`, `image_key`, `date_added`, `date_added_epoch`, `s3_bucket`, `s3vector_bucket`)
+  - [x]* 19.2 Write property test `tests/property/test_ingestion_properties.py` — Property 19 (for any generated `(collection, image)` pair, after mocked ingestion workflow execution the DynamoDB record contains all required non-null fields: `collection_name`, `image_key`, `date_added`, `date_added_epoch`, `s3_bucket`, `s3vector_bucket`)
   - _Requirements: 12.3, 12.4_
 
 - [ ] 20. Checkpoint — ingestion Lambdas complete
@@ -156,13 +156,13 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
     - Create S3 Vector bucket: `{env}-imagenetog-{collection_name}-vectors`
     - Create S3 Vectors index `images` (cosine, 1024-dim, float32, all metadata keys filterable) within the vector bucket
     - `dynamodb.put_item` on `{env}-imagenetog-collections` with `collection_name`, `created` (ISO 8601 today), `created_epoch`, `s3_bucket`, `s3vector_bucket`
-  - [ ]* 21.2 Write unit tests in `tests/unit/test_create_collection.py`: verify naming validation rejects invalid names (too short, too long, uppercase, special chars) and accepts valid names; verify correct bucket/index/DynamoDB calls using `moto`
+  - [x]* 21.2 Write unit tests in `tests/unit/test_create_collection.py`: verify naming validation rejects invalid names (too short, too long, uppercase, special chars) and accepts valid names; verify correct bucket/index/DynamoDB calls using `moto`
   - _Requirements: 11.1, 11.2, 11.3_
 
 - [ ] 22. Wire routes into Powertools app and finalize Lambda package
-  - [ ] 22.1 Update `src/api_handler/app.py` to import and register all four route handlers from `routes/collections.py` and `routes/images.py` using the Powertools `Router` pattern
-  - [ ] 22.2 Update `src/api_handler/lambda_function.py` to include the version guard import and confirm the Powertools `handler` export matches the Terraform `handler` config (`lambda_function.handler`)
-  - [ ] 22.3 Add `src/api_handler/requirements.txt` (Lambda layer / package deps) listing pinned versions of `aws-lambda-powertools` and `boto3`
+  - [x] 22.1 Update `src/api_handler/app.py` to import and register all four route handlers from `routes/collections.py` and `routes/images.py` using the Powertools `Router` pattern
+  - [x] 22.2 Update `src/api_handler/lambda_function.py` to include the version guard import and confirm the Powertools `handler` export matches the Terraform `handler` config (`lambda_function.handler`)
+  - [x] 22.3 Add `src/api_handler/requirements.txt` (Lambda layer / package deps) listing pinned versions of `aws-lambda-powertools` and `boto3`
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2_
 
 - [ ] 23. Auth property tests and sort property tests
