@@ -8,8 +8,12 @@
 #     -backend-config=backend.config
 #
 # See terraform/environments/{dev,staging,prod}/backend.config for the per-environment
-# values.  The config files use the placeholder "REPLACE_WITH_ACCOUNT_ID" for the
-# bucket name — substitute your AWS account ID before running terraform init.
+# values. The state bucket and DynamoDB lock table named in those files must be
+# created once, out-of-band, before the first `terraform init` (Terraform cannot
+# manage the backend it depends on). See the "Bootstrap the Terraform backend"
+# section in README.md. If the default bucket name (`imagenetog-redux-tfstate`) is
+# not globally unique in your account, choose an account-scoped name and update
+# every backend.config to match.
 
 terraform {
   backend "s3" {

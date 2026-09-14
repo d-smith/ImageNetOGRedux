@@ -18,8 +18,8 @@
 # entry point via its own `handler` attribute (embed.handler, etc.).
 data "archive_file" "ingestion" {
   type        = "zip"
-  source_dir  = "${path.root}/../../src/ingestion"
-  output_path = "${path.root}/../../.build/ingestion.zip"
+  source_dir  = "${path.module}/../../../src/ingestion"
+  output_path = "${path.module}/../../../.build/ingestion.zip"
 }
 
 locals {

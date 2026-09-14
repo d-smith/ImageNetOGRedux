@@ -108,6 +108,43 @@ Infrastructure is defined in Terraform under `terraform/`. Each environment
   The project pins a compatible version in `pyproject.toml`; the deployed Lambda
   packages pin the same in `src/api_handler/requirements.txt`.
 
+### Bootstrap the Terraform backend (one time per account)
+
+The S3 remote backend and its DynamoDB lock table are **not** managed by
+Terraform (Terraform cannot manage the backend it depends on). Create them once,
+manually, before the first `terraform init`. The names must match those in
+`terraform/environments/<env>/backend.config` (the defaults are shown below).
+
+```bash
+# DynamoDB state-lock table. The primary key MUST be named `LockID` (string) —
+# this is required by Terraform's S3 backend.
+aws dynamodb create-table \
+  --table-name imagenetog-tfstate-locks \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --region us-east-1 --profile terraform
+
+# S3 state bucket (versioning strongly recommended so state is recoverable).
+# The bucket name must be globally unique; if the default is taken, choose an
+# account-scoped name and update every backend.config to match.
+aws s3api create-bucket \
+  --bucket imagenetog-redux-tfstate \
+  --region us-east-1 --profile terraform
+aws s3api put-bucket-versioning \
+  --bucket imagenetog-redux-tfstate \
+  --versioning-configuration Status=Enabled --profile terraform
+```
+
+> **Notes:**
+> - In `us-east-1` do **not** pass `--create-bucket-configuration` /
+>   `LocationConstraint`; that is only for other regions.
+> - The lock table and state bucket are shared across all three environments —
+>   each environment uses a distinct state **key** (`dev/`, `staging/`, `prod/`),
+>   not a distinct table or bucket. You bootstrap these once, not per environment.
+> - Symptom if the lock table is missing: `terraform plan` fails with
+>   `Error acquiring the state lock ... ResourceNotFoundException`.
+
 ### Provision an environment
 
 Run these from the environment root you want to deploy (example uses `dev`):

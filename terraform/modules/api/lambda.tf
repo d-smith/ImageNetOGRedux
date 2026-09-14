@@ -9,12 +9,14 @@
 # are declared in iam.tf and shared across the module.
 # ---------------------------------------------------------------------------
 
-# Package the API handler source directory. path.root-relative to match the
-# ingestion module packaging convention.
+# Package the API handler source directory. Paths are resolved relative to this
+# module dir (path.module = terraform/modules/api), so packaging is correct
+# regardless of which environment root calls the module. The repo-root src/ and
+# .build/ dirs are three levels up (modules/api -> modules -> terraform -> root).
 data "archive_file" "api_handler" {
   type        = "zip"
-  source_dir  = "${path.root}/../../src/api_handler"
-  output_path = "${path.root}/../../.build/api_handler.zip"
+  source_dir  = "${path.module}/../../../src/api_handler"
+  output_path = "${path.module}/../../../.build/api_handler.zip"
 }
 
 resource "aws_lambda_function" "api_handler" {
