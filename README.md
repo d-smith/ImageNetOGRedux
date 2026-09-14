@@ -224,6 +224,20 @@ DynamoDB record). Idempotent — absent resources are skipped:
 > to fully reclaim a collection, and tear down collections **before**
 > `terraform destroy` so their names are still known.
 
+### Recreate a collection from scratch
+
+To reset a collection (e.g. for a clean integration-test run), delete it, then
+recreate it. `delete_collection` is idempotent, so this is safe even if a
+previous create only partially succeeded:
+
+```bash
+# 1. Tear down (add --yes to skip the confirmation prompt).
+.venv/bin/python -m scripts.delete_collection --collection-name my-collection --env dev --yes
+
+# 2. Recreate.
+.venv/bin/python -m scripts.create_collection --collection-name my-collection --env dev
+```
+
 ## Integration tests
 
 The tests under `tests/integration/` run against a **deployed** environment
