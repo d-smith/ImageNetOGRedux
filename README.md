@@ -185,6 +185,45 @@ This creates `dev-imagenetog-my-collection-images`,
 collection record in `dev-imagenetog-collections`. Uploading an image to the
 image bucket then triggers the ingestion workflow automatically.
 
+`create_collection.py` is **idempotent** — re-running it for an existing
+collection skips resources that already exist (so a partially-failed run can be
+safely re-run to completion).
+
+### List and delete collections
+
+Per-collection buckets, the vector index, and the DynamoDB record are created
+outside Terraform, so **`terraform destroy` does not remove them** — you must
+clean them up with the admin scripts.
+
+List collections and find orphaned buckets (read-only):
+
+```bash
+.venv/bin/python -m scripts.list_collections --env dev
+```
+
+This reports the collections registered in DynamoDB, the per-collection image
+buckets that exist, and any **orphans** (buckets with no matching DynamoDB
+record — e.g. left behind after `terraform destroy` or a partial create).
+
+Delete a collection and all its resources (destructive; empties + deletes the
+image bucket, deletes the vector index + vector bucket, and removes the
+DynamoDB record). Idempotent — absent resources are skipped:
+
+```bash
+# Interactive: prompts you to type the collection name to confirm.
+.venv/bin/python -m scripts.delete_collection --collection-name my-collection --env dev
+
+# Non-interactive (CI / scripted): skip the prompt with --yes.
+.venv/bin/python -m scripts.delete_collection --collection-name my-collection --env dev --yes
+```
+
+> **Note:** `list_collections` discovers *image* buckets via `s3:ListBuckets`,
+> but S3 Vectors buckets are **not** standard S3 buckets and do not appear in
+> that listing — so the orphan scan covers image buckets. Run
+> `delete_collection` (which deletes the vector bucket + index directly by name)
+> to fully reclaim a collection, and tear down collections **before**
+> `terraform destroy` so their names are still known.
+
 ## Integration tests
 
 The tests under `tests/integration/` run against a **deployed** environment
