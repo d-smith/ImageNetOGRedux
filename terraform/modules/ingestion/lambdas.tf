@@ -16,10 +16,22 @@
 
 # Package the shared ingestion source directory once. Each function selects its
 # entry point via its own `handler` attribute (embed.handler, etc.).
+# Package the ``ingestion`` package so the zip contains a top-level
+# ``ingestion/`` directory. The handlers import ``from ingestion import ...``,
+# so the package (not its flattened contents) must be importable at runtime.
+# We zip ``src/`` and exclude the other packages / build noise, then reference
+# handlers by their dotted package path (e.g. ``ingestion.embed.handler``).
 data "archive_file" "ingestion" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../src/ingestion"
+  source_dir  = "${path.module}/../../../src"
   output_path = "${path.module}/../../../.build/ingestion.zip"
+
+  excludes = [
+    "__init__.py",
+    "api_handler",
+    "scripts",
+    "imagenetog_redux.egg-info",
+  ]
 }
 
 locals {
@@ -36,15 +48,15 @@ locals {
   ingestion_functions = {
     embed = {
       name_suffix = "ingestion-embed"
-      handler     = "embed.handler"
+      handler     = "ingestion.embed.handler"
     }
     describe = {
       name_suffix = "ingestion-describe"
-      handler     = "describe.handler"
+      handler     = "ingestion.describe.handler"
     }
     store = {
       name_suffix = "ingestion-store"
-      handler     = "store.handler"
+      handler     = "ingestion.store.handler"
     }
   }
 }
@@ -62,6 +74,7 @@ resource "aws_lambda_function" "ingestion" {
   handler     = each.value.handler
   memory_size = var.lambda_memory_mb
   timeout     = var.lambda_timeout_seconds
+  layers      = [var.layer_arn]
 
   environment {
     variables = local.ingestion_env

@@ -34,6 +34,7 @@ _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
 import importlib
 from collections.abc import Iterator
 from typing import Any
+from unittest import mock
 
 import boto3
 import pytest
@@ -128,6 +129,22 @@ def test_create_image_bucket_provisions_bucket(_mocked_env: Any) -> None:
 
     buckets = {b["Name"] for b in s3.list_buckets()["Buckets"]}
     assert image_bucket in buckets
+
+    # EventBridge notifications must be enabled so uploads trigger ingestion.
+    # moto accepts put_bucket_notification_configuration but does not echo the
+    # EventBridgeConfiguration back via get_*, so we assert the call is made
+    # with the correct configuration by spying on a fresh client.
+    spy = boto3.client("s3", region_name="us-east-1")
+    with mock.patch.object(
+        spy,
+        "put_bucket_notification_configuration",
+        wraps=spy.put_bucket_notification_configuration,
+    ) as put_notif:
+        script.create_image_bucket(spy, image_bucket)
+    put_notif.assert_called_once_with(
+        Bucket=image_bucket,
+        NotificationConfiguration={"EventBridgeConfiguration": {}},
+    )
 
 
 def test_create_vector_bucket_provisions_bucket(_mocked_env: Any) -> None:

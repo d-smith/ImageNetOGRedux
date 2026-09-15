@@ -1,0 +1,13 @@
+# Runtime dependencies packaged into the shared Lambda layer and attached to
+# every ImageNetOG Redux Lambda (api_handler + the three ingestion functions).
+#
+# The Lambda Python runtime bundles boto3/botocore, but:
+#   * it does NOT bundle aws-lambda-powertools, and
+#   * its bundled boto3 may be too old to include the S3 Vectors (s3vectors)
+#     service.
+# Pinning both here (matching pyproject.toml) guarantees the deployed functions
+# import cleanly and can call s3vectors.
+#
+# Versions must match src/api_handler/requirements.txt and pyproject.toml.
+aws-lambda-powertools==2.43.1
+boto3==1.40.68

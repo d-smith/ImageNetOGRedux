@@ -66,7 +66,10 @@ def create_image_bucket(s3_client: object, bucket_name: str) -> None:
     """Create the S3 image bucket for a collection in ``us-east-1``.
 
     Idempotent: if the bucket already exists and is owned by this account, the
-    existing bucket is left in place and the step is skipped.
+    existing bucket is left in place and the step is skipped. In all cases
+    EventBridge notifications are (re-)enabled on the bucket so that image
+    uploads trigger the ingestion workflow (the EventBridge rule + Step
+    Functions wiring lives in the ingestion Terraform module).
 
     Args:
         s3_client: A boto3 S3 client.
@@ -82,6 +85,14 @@ def create_image_bucket(s3_client: object, bucket_name: str) -> None:
             logger.info("S3 image bucket already exists, skipping", bucket=bucket_name)
         else:
             raise
+
+    # Enable EventBridge notifications so s3:ObjectCreated events reach the
+    # ingestion EventBridge rule. Idempotent — safe to set on every run.
+    s3_client.put_bucket_notification_configuration(  # type: ignore[attr-defined]
+        Bucket=bucket_name,
+        NotificationConfiguration={"EventBridgeConfiguration": {}},
+    )
+    logger.info("Enabled EventBridge notifications on image bucket", bucket=bucket_name)
 
 
 def create_vector_bucket_and_index(s3vectors_client: object, bucket_name: str) -> None:

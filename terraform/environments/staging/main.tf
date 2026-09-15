@@ -23,6 +23,10 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
   }
 
   backend "s3" {}
@@ -49,6 +53,12 @@ locals {
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
+module "layer" {
+  source = "../../modules/layer"
+
+  env = var.env
+}
+
 module "auth" {
   source = "../../modules/auth"
 
@@ -70,6 +80,7 @@ module "ingestion" {
   tags               = local.common_tags
   images_table_arn   = module.storage.images_table_arn
   images_table_name  = module.storage.images_table_name
+  layer_arn          = module.layer.layer_arn
   lambda_memory_mb   = var.lambda_memory_mb
   log_retention_days = var.log_retention_days
 }
@@ -85,6 +96,7 @@ module "api" {
   images_table_name       = module.storage.images_table_name
   cognito_user_pool_id    = module.auth.user_pool_id
   cognito_user_pool_arn   = module.auth.user_pool_arn
+  layer_arn               = module.layer.layer_arn
   lambda_memory_mb        = var.lambda_memory_mb
   log_retention_days      = var.log_retention_days
   api_gateway_rate_limit  = var.api_gateway_rate_limit

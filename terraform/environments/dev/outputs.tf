@@ -21,3 +21,8 @@ output "admin_role_arn" {
   description = "ARN of the admin IAM role"
   value       = aws_iam_role.admin_role.arn
 }
+
+output "app_client_id" {
+  description = "Cognito User Pool App Client ID (for obtaining tokens)"
+  value       = module.auth.app_client_id
+}

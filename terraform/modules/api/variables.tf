@@ -79,6 +79,11 @@ variable "api_stage_name" {
   description = "API Gateway stage name"
 }
 
+variable "layer_arn" {
+  type        = string
+  description = "ARN of the shared dependencies Lambda layer (from the layer module)"
+}
+
 variable "api_gateway_rate_limit" {
   type        = number
   default     = 100

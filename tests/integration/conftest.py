@@ -22,9 +22,6 @@ section):
     IMAGENETOG_TEST_COLLECTION        An existing collection name to exercise ingestion against.
     IMAGENETOG_TEST_IMAGE_BUCKET      Image S3 bucket for that collection
                               (default {env}-imagenetog-{collection}-images).
-    IMAGENETOG_JWT            A valid Cognito access/ID token (Bearer) for authorized
-                              calls (rate-limit test). Optional; tests needing it skip
-                              when unset.
 """
 
 import os
@@ -84,12 +81,6 @@ def test_image_bucket(env_name: str, test_collection: str) -> str:
     )
 
 
-@pytest.fixture(scope="session")
-def jwt_token() -> str:
-    """A valid Bearer token for authorized calls; skips the test when absent."""
-    return _require("IMAGENETOG_JWT")
-
-
 @pytest.fixture
 def s3_client(boto_session: boto3.Session) -> object:
     return boto_session.client("s3")
@@ -98,3 +89,9 @@ def s3_client(boto_session: boto3.Session) -> object:
 @pytest.fixture
 def dynamodb_resource(boto_session: boto3.Session) -> Iterator[object]:
     yield boto_session.resource("dynamodb")
+
+
+@pytest.fixture
+def apigateway_client(boto_session: boto3.Session) -> object:
+    """API Gateway (v1/REST) management client for structural assertions."""
+    return boto_session.client("apigateway")

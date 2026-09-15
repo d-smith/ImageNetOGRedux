@@ -167,9 +167,31 @@ Useful outputs after apply:
 ```bash
 terraform output api_invoke_url   # base URL of the deployed API Gateway stage
 terraform output user_pool_id     # Cognito User Pool ID (for obtaining tokens)
+terraform output app_client_id    # Cognito App Client ID (for obtaining tokens)
 terraform output rest_api_id
 terraform output admin_role_arn
 ```
+
+> **Lambda dependency layer (build artifact).** The shared Lambda layer
+> (`aws-lambda-powertools` + `boto3`) is built during `terraform apply`: a
+> `null_resource` runs `pip install` into `.build/layer-<env>/python/` and zips
+> it to `.build/layer-<env>.zip`, which the `aws_lambda_layer_version` uploads.
+> This requires `pip` and network access on the machine running `apply`. The
+> build re-runs only when `terraform/modules/layer/requirements.txt` changes.
+>
+> The built zip under `.build/` must persist across applies. If you delete
+> `.build/` after the layer has been applied, a normal `terraform apply` will
+> **not** rebuild it automatically (a `null_resource` provisioner only runs on
+> create/replace, and its trigger — the requirements hash — is unchanged), so
+> the apply fails with `reading ZIP file ... no such file or directory`. Force
+> a rebuild with:
+>
+> ```bash
+> terraform apply -replace='module.layer.null_resource.layer_build'
+> ```
+>
+> (This is why the teardown step lists `.build` removal as *optional* — if you
+> clean it, use the `-replace` form on the next apply.)
 
 ### Create a collection
 
@@ -238,6 +260,47 @@ previous create only partially succeeded:
 .venv/bin/python -m scripts.create_collection --collection-name my-collection --env dev
 ```
 
+### Tear down an environment
+
+Order matters. Per-collection buckets, the vector index, and the collection's
+DynamoDB record are created **outside** Terraform, so `terraform destroy` will
+not remove them. Delete collections **first** (while their names are still
+known), then destroy the Terraform-managed infrastructure — otherwise the
+buckets become orphans that must be cleaned up by hand.
+
+```bash
+export AWS_PROFILE=terraform
+export AWS_REGION=us-east-1
+
+# 1. Delete every collection first (repeat for each; --yes skips the prompt).
+.venv/bin/python -m scripts.delete_collection --collection-name my-collection --env dev --yes
+
+# 2. Confirm nothing is left (want: registered [], orphans []).
+.venv/bin/python -m scripts.list_collections --env dev
+
+# 3. Destroy the Terraform-managed infrastructure.
+cd terraform/environments/dev
+terraform init -backend-config=backend.config   # re-init if needed
+terraform destroy
+
+# 4. (Optional) remove local build artifacts (rebuilt on the next apply).
+cd ../../.. && rm -rf .build
+```
+
+> **Do NOT tear down the Terraform backend** (the S3 state bucket
+> `imagenetog-redux-tfstate` and the DynamoDB lock table
+> `imagenetog-tfstate-locks`). These are account-level, shared across all
+> environments, and created once by the bootstrap step. Leave them in place —
+> after `terraform destroy` the state file simply becomes an empty state.
+
+To redeploy from scratch afterwards, follow **Provision an environment** →
+**Create a collection** → **Integration tests** again. Note that a fresh
+`terraform apply` creates a **new** API Gateway with a different
+`api_invoke_url` — always re-read it from `terraform output api_invoke_url`
+rather than reusing a previous URL. Also allow 1–2 minutes after
+`create_collection` for S3→EventBridge notifications to propagate before the
+first ingestion run.
+
 ## Integration tests
 
 The tests under `tests/integration/` run against a **deployed** environment
@@ -267,10 +330,6 @@ invoke them without a deployment.
 3. Optional variables:
 
    ```bash
-   # Only needed for the rate-limit test (throttling is applied after auth,
-   # so it needs a valid Cognito Bearer token — access or ID token):
-   export IMAGENETOG_JWT="<a-valid-cognito-token>"
-
    # Override derived defaults if your naming differs:
    export IMAGENETOG_IMAGES_TABLE=dev-imagenetog-images
    export IMAGENETOG_TEST_IMAGE_BUCKET=dev-imagenetog-my-collection-images
@@ -287,7 +346,7 @@ What each test needs and does:
 | Test | Requires | Behaviour |
 |---|---|---|
 | `test_auth_integration.py` | `IMAGENETOG_API_BASE_URL` | Asserts the deployed API returns `401` + structured JSON for missing / invalid / non-Bearer tokens. |
-| `test_rate_limit.py` | `IMAGENETOG_API_BASE_URL`, `IMAGENETOG_JWT` | Bursts authorized requests above the usage plan and asserts a `429` with `rate_limit.exceeded`. |
+| `test_rate_limit.py` | `IMAGENETOG_API_BASE_URL` (+ AWS creds) | Verifies the rate-limiting **configuration**: the usage plan exists with positive rate/burst throttle settings, is attached to the API stage, and the `THROTTLED` gateway response returns the `rate_limit.exceeded` JSON contract. |
 | `test_ingestion_e2e.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Uploads a test image to the collection bucket and polls DynamoDB (up to 180s) until the metadata record appears with all required fields. |
 | `test_presigned_url_expiry.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Generates a 5-second presigned URL, waits past expiry, and asserts S3 returns `403`. |
 
@@ -298,7 +357,10 @@ single integration test:
 .venv/bin/pytest -m integration tests/integration/test_auth_integration.py --no-cov -v
 ```
 
-> **Note on the rate-limit test:** it is timing- and account-sensitive. The dev
-> usage plan is intentionally small (`api_gateway_rate_limit` / `burst` in
-> `terraform/environments/dev/terraform.tfvars`). If your deployed limits are
-> larger, increase `_BURST` in `test_rate_limit.py`.
+> **Note on the rate-limit test:** it verifies the throttling **configuration**
+> (usage plan + stage attachment + `THROTTLED` response contract) rather than
+> generating a request burst. This is deterministic and needs no Cognito token:
+> a behavioural burst test is timing- and account-sensitive, and throttling is
+> applied only after authorization. The dev throttle values live in
+> `api_gateway_rate_limit` / `api_gateway_burst_limit` in
+> `terraform/environments/dev/terraform.tfvars`.

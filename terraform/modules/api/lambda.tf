@@ -15,8 +15,17 @@
 # .build/ dirs are three levels up (modules/api -> modules -> terraform -> root).
 data "archive_file" "api_handler" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../src/api_handler"
+  source_dir  = "${path.module}/../../../src"
   output_path = "${path.module}/../../../.build/api_handler.zip"
+
+  # Package the ``api_handler`` package as a top-level dir (the code imports
+  # ``from api_handler import ...``); exclude the other packages / build noise.
+  excludes = [
+    "__init__.py",
+    "ingestion",
+    "scripts",
+    "imagenetog_redux.egg-info",
+  ]
 }
 
 resource "aws_lambda_function" "api_handler" {
@@ -27,9 +36,10 @@ resource "aws_lambda_function" "api_handler" {
   source_code_hash = data.archive_file.api_handler.output_base64sha256
 
   runtime     = "python3.12"
-  handler     = "lambda_function.handler"
+  handler     = "api_handler.lambda_function.handler"
   memory_size = var.lambda_memory_mb
   timeout     = var.lambda_timeout_seconds
+  layers      = [var.layer_arn]
 
   environment {
     # Names only — configuration, never credentials (per security-patterns).
