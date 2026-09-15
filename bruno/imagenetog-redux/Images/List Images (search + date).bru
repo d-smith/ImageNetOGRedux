@@ -1,0 +1,27 @@
+meta {
+  name: List Images (search + date)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}/images?description=a sunset over mountains&addedAfter=2024-01-01&addedBefore=2025-12-31&limit=10
+}
+
+params:query {
+  description: a sunset over mountains
+  addedAfter: 2024-01-01
+  addedBefore: 2025-12-31
+  limit: 10
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}
+
+docs {
+  Combined mode: vector search with a date-range metadata filter applied to the
+  vector query (addedAfter / addedBefore, ISO-8601 YYYY-MM-DD).
+}

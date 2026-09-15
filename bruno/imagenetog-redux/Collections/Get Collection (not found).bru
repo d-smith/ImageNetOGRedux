@@ -1,0 +1,23 @@
+meta {
+  name: Get Collection (not found)
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/collections/does-not-exist
+}
+
+tests {
+  test("returns 404", function() {
+    expect(res.status).to.equal(404);
+  });
+  test("uses the resource.not_found token", function() {
+    expect(res.body.error).to.equal("resource.not_found");
+  });
+}
+
+docs {
+  Negative path: a well-formed but non-existent collection name returns
+  404 with the `resource.not_found` error token.
+}

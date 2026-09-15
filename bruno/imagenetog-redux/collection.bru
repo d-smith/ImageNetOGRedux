@@ -1,0 +1,18 @@
+headers {
+  Authorization: {{authToken}}
+}
+
+docs {
+  # ImageNetOG Redux — read API collection
+
+  Every request inherits the `Authorization: {{authToken}}` header defined here.
+  The API Gateway Cognito authorizer accepts the raw Cognito JWT (no `Bearer`
+  prefix). Obtain a token via the `Auth/Get Token` request after logging in
+  through the Cognito hosted UI — see the project README section
+  "API spec & Bruno collection" for the full walkthrough.
+
+  Select the `dev` environment and populate its variables before running
+  requests. The `Auth/Get Token` request overrides this header (the token
+  exchange itself is unauthenticated), and the "unauthenticated" negative-path
+  request clears it to demonstrate the 401 contract.
+}

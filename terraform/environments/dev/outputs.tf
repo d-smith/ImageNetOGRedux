@@ -26,3 +26,13 @@ output "app_client_id" {
   description = "Cognito User Pool App Client ID (for obtaining tokens)"
   value       = module.auth.app_client_id
 }
+
+output "hosted_ui_domain" {
+  description = "Cognito hosted-UI domain prefix"
+  value       = module.auth.hosted_ui_domain
+}
+
+output "hosted_ui_login_url" {
+  description = "Ready-to-open Cognito hosted-UI authorize URL (authorization-code flow) for obtaining a token"
+  value       = module.auth.hosted_ui_login_url
+}

@@ -364,3 +364,132 @@ single integration test:
 > applied only after authorization. The dev throttle values live in
 > `api_gateway_rate_limit` / `api_gateway_burst_limit` in
 > `terraform/environments/dev/terraform.tfvars`.
+
+
+## API spec & Bruno collection
+
+The read API is described by an OpenAPI 3.1 spec, and a
+[Bruno](https://www.usebruno.com/) collection is provided for lightweight manual
+exploratory testing (including obtaining a Cognito token via the browser).
+
+### OpenAPI specification
+
+The spec lives at [`openapi/openapi.yaml`](openapi/openapi.yaml). It describes
+all four read endpoints, their query/path parameters, response schemas, the
+error contract (`param.invalid`, `auth.unauthorized`, `resource.not_found`,
+`method.not_allowed`, `rate_limit.exceeded`, `server.error`), and the Cognito
+OAuth2 security scheme.
+
+Validate or preview it:
+
+```bash
+# Validate (Python; matches the validator used in this repo)
+python3 -m openapi_spec_validator openapi/openapi.yaml
+
+# Or lint / preview with Redocly (Node)
+npx @redocly/cli lint openapi/openapi.yaml
+npx @redocly/cli preview-docs openapi/openapi.yaml
+```
+
+The `servers` URL is templated (`restApiId`, `region`, `stage`); fill
+`restApiId` from `terraform output rest_api_id`. The `authorizationUrl` /
+`tokenUrl` in the security scheme use a `HOSTED_UI_DOMAIN` placeholder — replace
+it with your hosted-UI domain (below) when importing the spec into a tool that
+drives the OAuth flow.
+
+### Bruno collection
+
+The collection lives at [`bruno/imagenetog-redux/`](bruno/imagenetog-redux/).
+Open the `bruno/imagenetog-redux` folder in Bruno and select the **dev**
+environment. Every request inherits an `Authorization: {{authToken}}` header;
+you obtain that token through the browser and the **Get Token** request.
+
+#### Prerequisite: the Cognito hosted-UI domain
+
+The browser login page requires a Cognito hosted-UI domain
+(`aws_cognito_user_pool_domain`). It is defined in the `auth` module but is a
+**new** addition — if your deployed environment predates it, apply it first:
+
+```bash
+cd terraform/environments/dev
+terraform init -backend-config=backend.config
+terraform apply   # creates {env}-imagenetog-auth hosted-UI domain + outputs
+```
+
+> The domain prefix (`{env}-imagenetog-auth`) must be globally unique within the
+> region. If `apply` fails with a domain-already-exists error, override
+> `hosted_ui_domain_suffix` in the `auth` module call.
+
+#### Prerequisite: a Cognito user to log in with
+
+The pool has no seeded user. Create and confirm a dev test user with the AWS CLI
+(sign-up + email verification also works, but admin creation is fastest):
+
+```bash
+export AWS_PROFILE=terraform
+export AWS_REGION=us-east-1
+USER_POOL_ID="$(terraform -chdir=terraform/environments/dev output -raw user_pool_id)"
+
+# Create the user (email is the username).
+aws cognito-idp admin-create-user \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "tester@example.com" \
+  --message-action SUPPRESS
+
+# Set a permanent password so the account is immediately usable
+# (must satisfy the pool policy: >=12 chars, upper/lower/number/symbol).
+aws cognito-idp admin-set-user-password \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "tester@example.com" \
+  --password 'Chang3Me!Now-2024' \
+  --permanent
+```
+
+> The password above is a throwaway example for a **dev** pool. Do not reuse it
+> or commit real credentials anywhere.
+
+#### Read the deployment coordinates
+
+```bash
+cd terraform/environments/dev
+terraform output rest_api_id           # -> baseUrl host
+terraform output app_client_id         # -> appClientId
+terraform output hosted_ui_domain      # -> hostedUiDomain prefix
+terraform output hosted_ui_login_url   # -> open this in a browser
+```
+
+#### Populate the Bruno `dev` environment
+
+Set these variables in the Bruno **dev** environment (they ship with
+placeholders — no real values are committed):
+
+| Variable | Value |
+|---|---|
+| `baseUrl` | `https://<rest_api_id>.execute-api.us-east-1.amazonaws.com/v1` |
+| `hostedUiDomain` | `<hosted_ui_domain>.auth.us-east-1.amazoncognito.com` |
+| `appClientId` | `terraform output app_client_id` |
+| `redirectUri` | `https://localhost:3000/callback` (matches the app client) |
+| `authCode` | *(empty — pasted after browser login)* |
+| `authToken` | *(empty — set automatically by Get Token)* |
+| `testCollection` | an existing collection name (e.g. `my-collection`) |
+| `testImageKey` | an existing image key in that collection |
+
+#### Obtain a token and run requests
+
+1. Open the `hosted_ui_login_url` value in a browser and log in with the test
+   user.
+2. Cognito redirects to `https://localhost:3000/callback?code=<CODE>`. Nothing
+   runs on `localhost:3000` — just copy the `code` value out of the address bar.
+3. Paste it into the Bruno `authCode` variable.
+4. Run **Auth → Get Token**. Its post-response script stores the ID token in
+   `authToken`, so all other requests authenticate automatically.
+5. Run any request under **Collections** or **Images**. Tokens expire after
+   ~1 hour (the app client's default validity) — repeat steps 1–4 to refresh.
+
+The collection includes happy-path and negative-path requests (not-found → 404
+`resource.not_found`; cleared token → 401 `auth.unauthorized`; traversal key →
+400 `param.invalid`) with lightweight assertions on status and key fields.
+
+> **No secrets are committed.** The Bruno environment contains only
+> placeholders; real tokens and codes stay local. `bruno/**/.env` and
+> `bruno/**/environments/*.local.bru` are git-ignored.

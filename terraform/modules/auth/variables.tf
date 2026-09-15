@@ -24,3 +24,9 @@ variable "refresh_token_validity_days" {
   default     = 30
   description = "Refresh token validity in days"
 }
+
+variable "hosted_ui_domain_suffix" {
+  type        = string
+  default     = "auth"
+  description = "Suffix appended to the {env}-imagenetog Cognito hosted-UI domain prefix. The full prefix ({env}-imagenetog-{suffix}) must be globally unique within the region."
+}

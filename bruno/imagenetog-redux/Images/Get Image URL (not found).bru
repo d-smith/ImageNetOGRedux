@@ -1,0 +1,24 @@
+meta {
+  name: Get Image URL (not found)
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}/images/does-not-exist.jpg
+}
+
+tests {
+  test("returns 404", function() {
+    expect(res.status).to.equal(404);
+  });
+  test("uses the resource.not_found token", function() {
+    expect(res.body.error).to.equal("resource.not_found");
+  });
+}
+
+docs {
+  Negative path: a valid-format but non-existent image key returns 404 with the
+  `resource.not_found` token. (A presigned URL is never generated for a
+  non-existent key.)
+}

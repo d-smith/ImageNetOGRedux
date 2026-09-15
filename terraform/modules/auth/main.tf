@@ -2,6 +2,10 @@ locals {
   name_prefix = "${var.env}-imagenetog"
 }
 
+# Region is needed to construct the Cognito hosted-UI base URL. Sourced from a
+# data source rather than hardcoded (per terraform-conventions).
+data "aws_region" "current" {}
+
 # ---------------------------------------------------------------------------
 # Cognito User Pool
 # ---------------------------------------------------------------------------
@@ -96,4 +100,18 @@ resource "aws_cognito_user_pool_client" "api" {
     "ALLOW_USER_SRP_AUTH",
     "ALLOW_REFRESH_TOKEN_AUTH",
   ]
+}
+
+# ---------------------------------------------------------------------------
+# Cognito hosted-UI domain
+#
+# Provisions the Cognito-prefixed hosted-UI domain so the hosted login page has
+# a resolvable URL. Prefix domains resolve to
+# ``https://<domain>.auth.<region>.amazoncognito.com``. The domain prefix must
+# be globally unique within the region; override ``hosted_ui_domain_suffix`` per
+# environment if the default collides.
+# ---------------------------------------------------------------------------
+resource "aws_cognito_user_pool_domain" "hosted_ui" {
+  domain       = "${local.name_prefix}-${var.hosted_ui_domain_suffix}"
+  user_pool_id = aws_cognito_user_pool.main.id
 }

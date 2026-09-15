@@ -1,0 +1,507 @@
+openapi: 3.1.0
+
+info:
+  title: ImageNetOG Redux Read API
+  version: v1
+  description: |
+    Read-only REST API for the ImageNetOG Redux service. Exposes collections of
+    images and their metadata, description-based vector similarity search, and
+    time-limited presigned URLs for individual images.
+
+    All endpoints are `GET` only and versioned under the `/v1` path prefix. Any
+    non-`GET` method on a known path returns `405 method.not_allowed`; any path
+    without the `/v1` prefix returns `404 resource.not_found`.
+
+    ## Authentication
+
+    Every request is authorized by an AWS API Gateway Cognito User Pools
+    authorizer. Callers present a Cognito JWT in the **raw `Authorization`
+    header** (the authorizer has no `authorization_scopes` configured, so either
+    the ID token or the access token is accepted; a `Bearer` prefix is not
+    required). Obtain the token via the Cognito hosted-UI authorization-code
+    flow — see the project README for the browser-based token workflow used with
+    the accompanying Bruno collection.
+
+servers:
+  - url: https://{restApiId}.execute-api.{region}.amazonaws.com/{stage}
+    description: Deployed API Gateway stage. Read the concrete values from
+      `terraform output` (`rest_api_id`, region is `us-east-1`, stage is `v1`).
+    variables:
+      restApiId:
+        default: REST_API_ID
+        description: The API Gateway REST API ID (from `terraform output rest_api_id`).
+      region:
+        default: us-east-1
+        description: AWS region of the deployment.
+      stage:
+        default: v1
+        description: API Gateway stage name.
+
+security:
+  - cognitoAuth: []
+
+paths:
+  /collections:
+    get:
+      operationId: listCollections
+      summary: List collections
+      description: |
+        Returns a paginated envelope of collections. Supports pagination,
+        sorting by `name` or `created`, a case-insensitive `name` prefix filter,
+        and a `created` date range.
+      tags: [Collections]
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/collectionSortParam'
+        - $ref: '#/components/parameters/orderParam'
+        - $ref: '#/components/parameters/nameParam'
+        - $ref: '#/components/parameters/createdAfterParam'
+        - $ref: '#/components/parameters/createdBeforeParam'
+      responses:
+        '200':
+          description: A paginated list of collections.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /collections/{collection_name}:
+    get:
+      operationId: getCollection
+      summary: Get a collection
+      description: Returns a single collection by name.
+      tags: [Collections]
+      parameters:
+        - $ref: '#/components/parameters/collectionNameParam'
+      responses:
+        '200':
+          description: The requested collection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Collection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /collections/{collection_name}/images:
+    get:
+      operationId: listImages
+      summary: List or search images in a collection
+      description: |
+        Returns a paginated envelope of images in the collection.
+
+        Three search modes are selected by the supplied parameters:
+          * **Date listing** — no `description`. Lists images by date, optionally
+            bounded by `addedAfter` / `addedBefore`.
+          * **Description search** — `description` supplied, no date range.
+            Performs a vector similarity search and returns the ranked top-K
+            (bounded by `limit`). `offset` is ignored for vector search, and
+            `total` equals the number of ranked results returned.
+          * **Combined** — `description` plus a date range. Same as description
+            search, with the date range applied as a metadata filter on the
+            vector query.
+      tags: [Images]
+      parameters:
+        - $ref: '#/components/parameters/collectionNameParam'
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/imageSortParam'
+        - $ref: '#/components/parameters/orderParam'
+        - $ref: '#/components/parameters/addedAfterParam'
+        - $ref: '#/components/parameters/addedBeforeParam'
+        - $ref: '#/components/parameters/descriptionParam'
+      responses:
+        '200':
+          description: A paginated list of images.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /collections/{collection_name}/images/{image_key}:
+    get:
+      operationId: getImageUrl
+      summary: Get a presigned URL for an image
+      description: |
+        Returns a time-limited presigned GET URL for the image object. The
+        collection and image are both confirmed to exist before a URL is
+        generated. The URL expires after a fixed server-side TTL (300 seconds).
+      tags: [Images]
+      parameters:
+        - $ref: '#/components/parameters/collectionNameParam'
+        - $ref: '#/components/parameters/imageKeyParam'
+      responses:
+        '200':
+          description: A presigned URL for the requested image.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUrl'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    cognitoAuth:
+      type: oauth2
+      description: |
+        AWS Cognito User Pool authentication. The resulting JWT is sent in the
+        raw `Authorization` header (no `Bearer` prefix required). Tokens are
+        obtained via the hosted-UI authorization-code flow; the authorization
+        and token URLs below use the Cognito hosted-UI domain
+        (`https://<domain>.auth.<region>.amazoncognito.com`).
+      flows:
+        authorizationCode:
+          authorizationUrl: https://HOSTED_UI_DOMAIN.auth.us-east-1.amazoncognito.com/oauth2/authorize
+          tokenUrl: https://HOSTED_UI_DOMAIN.auth.us-east-1.amazoncognito.com/oauth2/token
+          scopes:
+            openid: OpenID Connect scope (required)
+            email: Access to the user's email claim
+            profile: Access to the user's profile claims
+
+  schemas:
+    Collection:
+      type: object
+      description: A collection as returned to API consumers.
+      additionalProperties: false
+      required: [name, created]
+      properties:
+        name:
+          type: string
+          description: The collection name.
+          example: nature-2024
+        created:
+          type: string
+          description: Creation timestamp of the collection (ISO-8601).
+          example: '2024-05-01T12:00:00Z'
+
+    CollectionList:
+      type: object
+      description: Paginated envelope for the collections list endpoint.
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Collection'
+        total:
+          type: integer
+          description: Total number of collections matching the filters.
+        limit:
+          type: integer
+          description: The applied page size.
+        offset:
+          type: integer
+          description: The applied zero-based offset.
+
+    Image:
+      type: object
+      description: An image as returned to API consumers.
+      additionalProperties: false
+      required: [key, dateAdded, description]
+      properties:
+        key:
+          type: string
+          description: The image key (S3 object key) within the collection.
+          example: photos/sunset.jpg
+        dateAdded:
+          type: string
+          description: When the image was added (ISO-8601). Field name is camelCase by contract.
+          example: '2024-05-02T09:30:00Z'
+        description:
+          type: [string, 'null']
+          description: Generated natural-language description of the image; may be null.
+          example: A sunset over a mountain range.
+
+    ImageList:
+      type: object
+      description: Paginated envelope for the images list endpoint.
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+        total:
+          type: integer
+          description: |
+            Total number of images matching the query. For description
+            (vector) search this equals the number of ranked results returned.
+        limit:
+          type: integer
+          description: The applied page size (maps to top-K for vector search).
+        offset:
+          type: integer
+          description: The applied zero-based offset (ignored for vector search).
+
+    PresignedUrl:
+      type: object
+      description: A time-limited presigned GET URL for an image.
+      additionalProperties: false
+      required: [key, url]
+      properties:
+        key:
+          type: string
+          description: The image key the URL grants access to.
+          example: photos/sunset.jpg
+        url:
+          type: string
+          format: uri
+          description: The presigned GET URL (expires after a fixed server-side TTL).
+
+    Error:
+      type: object
+      description: Structured error body returned for all error responses.
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Dot-separated error token identifying the error class.
+          example: param.invalid
+        message:
+          type: string
+          description: Human-readable error message safe for API consumers.
+          example: "Invalid parameter 'limit': must be between 1 and 100"
+
+  parameters:
+    limitParam:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    offsetParam:
+      name: offset
+      in: query
+      required: false
+      description: Zero-based index of the first item to return.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    collectionSortParam:
+      name: sort
+      in: query
+      required: false
+      description: Field to sort collections by.
+      schema:
+        type: string
+        enum: [name, created]
+        default: name
+
+    imageSortParam:
+      name: sort
+      in: query
+      required: false
+      description: Field to sort images by (date listing mode).
+      schema:
+        type: string
+        enum: [dateAdded]
+        default: dateAdded
+
+    orderParam:
+      name: order
+      in: query
+      required: false
+      description: Sort direction.
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+
+    nameParam:
+      name: name
+      in: query
+      required: false
+      description: Case-insensitive collection-name prefix filter.
+      schema:
+        type: string
+
+    createdAfterParam:
+      name: createdAfter
+      in: query
+      required: false
+      description: Inclusive lower bound on collection creation date (ISO-8601 YYYY-MM-DD).
+      schema:
+        type: string
+        format: date
+
+    createdBeforeParam:
+      name: createdBefore
+      in: query
+      required: false
+      description: Inclusive upper bound on collection creation date (ISO-8601 YYYY-MM-DD).
+      schema:
+        type: string
+        format: date
+
+    addedAfterParam:
+      name: addedAfter
+      in: query
+      required: false
+      description: Inclusive lower bound on image added date (ISO-8601 YYYY-MM-DD).
+      schema:
+        type: string
+        format: date
+
+    addedBeforeParam:
+      name: addedBefore
+      in: query
+      required: false
+      description: Inclusive upper bound on image added date (ISO-8601 YYYY-MM-DD).
+      schema:
+        type: string
+        format: date
+
+    descriptionParam:
+      name: description
+      in: query
+      required: false
+      description: |
+        Free-text query for description-based vector similarity search.
+        Truncated server-side to 500 characters. When supplied, the endpoint
+        returns a ranked top-K result set.
+      schema:
+        type: string
+        maxLength: 500
+
+    collectionNameParam:
+      name: collection_name
+      in: path
+      required: true
+      description: |
+        The collection name. Must be 3–48 lowercase alphanumeric characters or
+        hyphens, starting and ending with an alphanumeric character.
+      schema:
+        type: string
+        pattern: '^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$'
+
+    imageKeyParam:
+      name: image_key
+      in: path
+      required: true
+      description: |
+        The image key (S3 object key) within the collection. Must not contain
+        path-traversal (`..`) sequences and must not exceed 1024 characters.
+      schema:
+        type: string
+        maxLength: 1024
+
+  responses:
+    BadRequest:
+      description: A query or path parameter failed validation (token `param.invalid`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: param.invalid
+            message: "Invalid parameter 'limit': must be between 1 and 100"
+
+    Unauthorized:
+      description: Authentication is missing or invalid (token `auth.unauthorized`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: auth.unauthorized
+            message: Authentication is required to access this resource.
+
+    NotFound:
+      description: The requested resource does not exist (token `resource.not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: resource.not_found
+            message: "Collection 'nature-2024' not found."
+
+    MethodNotAllowed:
+      description: A non-GET method was used on a known path (token `method.not_allowed`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: method.not_allowed
+            message: "Method 'POST' is not allowed on '/v1/collections'."
+
+    TooManyRequests:
+      description: The request rate limit was exceeded (token `rate_limit.exceeded`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: rate_limit.exceeded
+            message: Request rate limit exceeded. Please retry later.
+
+    ServerError:
+      description: An unexpected internal error occurred (token `server.error`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: server.error
+            message: An internal error occurred.
+
+tags:
+  - name: Collections
+    description: Collection discovery and retrieval.
+  - name: Images
+    description: Image listing, vector search, and presigned URL retrieval.

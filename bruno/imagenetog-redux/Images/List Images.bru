@@ -1,0 +1,24 @@
+meta {
+  name: List Images
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}/images
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("has a paginated envelope of images", function() {
+    expect(res.body.items).to.be.an("array");
+    expect(res.body.total).to.be.a("number");
+  });
+}
+
+docs {
+  Date-listing mode (no description): lists images in the collection ordered by
+  dateAdded. Each item is {key, dateAdded, description (nullable)}.
+}
