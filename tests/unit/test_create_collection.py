@@ -15,13 +15,17 @@ Implementation note: ``create_collection`` builds its boto3 clients *inside* the
 function (with an explicit ``region_name``), so they bind to the mocked backend
 naturally under ``mock_aws``. We still reload the module inside the mock for
 parity with the other test modules. moto 5.1.22 implements s3vectors
-``create_vector_bucket``/``create_index`` and s3 ``create_bucket``; however the
-pinned botocore rejects ``create_index`` when
-``metadataConfiguration.nonFilterableMetadataKeys`` is an empty list (its
-minimum length is 1) — this validation happens client-side before the request
-reaches moto. That constraint is orthogonal to the collection-provisioning
-logic under test, so the flow is verified through the individual helper
-functions rather than the end-to-end ``create_collection`` call. No live AWS
+``create_vector_bucket``/``create_index`` and s3 ``create_bucket``. The
+provisioning flow is verified through the individual helper functions (image
+bucket, vector bucket, and the DynamoDB collection record) plus name-validation
+accept/reject cases.
+
+Historical note: an earlier version of ``create_collection`` passed
+``metadataConfiguration={"nonFilterableMetadataKeys": []}`` to ``create_index``,
+which the real S3 Vectors API rejects (min length 1). That argument has since
+been removed from the source (omitting it makes all metadata keys filterable),
+so the constraint no longer applies; the helper-level coverage here remains
+because it does not require a live AWS
 calls are made.
 
 _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
@@ -30,6 +34,7 @@ _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
 import importlib
 from collections.abc import Iterator
 from typing import Any
+from unittest import mock
 
 import boto3
 import pytest
@@ -125,14 +130,28 @@ def test_create_image_bucket_provisions_bucket(_mocked_env: Any) -> None:
     buckets = {b["Name"] for b in s3.list_buckets()["Buckets"]}
     assert image_bucket in buckets
 
+    # EventBridge notifications must be enabled so uploads trigger ingestion.
+    # moto accepts put_bucket_notification_configuration but does not echo the
+    # EventBridgeConfiguration back via get_*, so we assert the call is made
+    # with the correct configuration by spying on a fresh client.
+    spy = boto3.client("s3", region_name="us-east-1")
+    with mock.patch.object(
+        spy,
+        "put_bucket_notification_configuration",
+        wraps=spy.put_bucket_notification_configuration,
+    ) as put_notif:
+        script.create_image_bucket(spy, image_bucket)
+    put_notif.assert_called_once_with(
+        Bucket=image_bucket,
+        NotificationConfiguration={"EventBridgeConfiguration": {}},
+    )
+
 
 def test_create_vector_bucket_provisions_bucket(_mocked_env: Any) -> None:
-    # moto 5.1.22 implements s3vectors:create_vector_bucket. The full
-    # create_collection flow additionally calls create_index, whose
-    # ``metadataConfiguration.nonFilterableMetadataKeys`` argument the pinned
-    # botocore rejects when empty (min length 1) before the request reaches
-    # moto; that constraint is orthogonal to the collection-provisioning logic
-    # under test here, so we verify the vector bucket creation on its own.
+    # moto 5.1.22 implements s3vectors:create_vector_bucket. We verify vector
+    # bucket creation on its own here; create_index is covered by the full
+    # provisioning path (it no longer sends the invalid empty
+    # metadataConfiguration that the real API rejected — see module docstring).
     vector_bucket = f"{_ENV}-imagenetog-{_VALID_NAME}-vectors"
 
     s3vectors = boto3.client("s3vectors", region_name="us-east-1")

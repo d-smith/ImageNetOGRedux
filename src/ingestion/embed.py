@@ -18,6 +18,7 @@ from aws_lambda_powertools import Logger
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from ingestion import config
+from ingestion.event_utils import enrich_event
 
 logger = Logger()
 
@@ -37,16 +38,25 @@ _EMBEDDING_LENGTH = 1024
 def handler(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
     """Generate an image embedding and store it in S3 Vectors.
 
+    This is the first step of the Step Functions workflow. The EventBridge rule
+    delivers only ``s3_bucket`` and ``image_key``; this handler enriches the
+    event with the derived ``collection_name``, ``s3vector_bucket``,
+    ``date_added``, and ``date_added_epoch`` fields (see
+    :func:`ingestion.event_utils.enrich_event`) and returns the **enriched**
+    event so the Parallel state's ``ResultSelector`` and the downstream store
+    step receive the complete field set.
+
     Args:
-        event: The Step Functions event. Required keys are ``collection_name``,
-            ``image_key``, ``s3_bucket``, ``s3vector_bucket``, and
-            ``date_added_epoch``.
+        event: The Step Functions event. Requires at least ``s3_bucket`` and
+            ``image_key``; remaining fields are derived when absent.
         context: The Lambda context object (unused).
 
     Returns:
-        The input ``event`` unchanged, so Step Functions can pass it to the
-        next state.
+        The **enriched** event, so Step Functions can pass the full field set
+        to the next state.
     """
+    event = enrich_event(event)
+
     collection_name = event["collection_name"]
     image_key = event["image_key"]
     s3_bucket = event["s3_bucket"]

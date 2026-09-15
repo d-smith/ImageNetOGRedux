@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 
 import boto3
 from aws_lambda_powertools import Logger
+from botocore.exceptions import ClientError
 
 logger = Logger(service="create_collection")
 
@@ -64,41 +65,83 @@ def validate_collection_name(collection_name: str) -> None:
 def create_image_bucket(s3_client: object, bucket_name: str) -> None:
     """Create the S3 image bucket for a collection in ``us-east-1``.
 
+    Idempotent: if the bucket already exists and is owned by this account, the
+    existing bucket is left in place and the step is skipped. In all cases
+    EventBridge notifications are (re-)enabled on the bucket so that image
+    uploads trigger the ingestion workflow (the EventBridge rule + Step
+    Functions wiring lives in the ingestion Terraform module).
+
     Args:
         s3_client: A boto3 S3 client.
         bucket_name: The image bucket name to create.
     """
-    # us-east-1 must not supply a LocationConstraint (AWS API requirement).
-    s3_client.create_bucket(Bucket=bucket_name)  # type: ignore[attr-defined]
-    logger.info("Created S3 image bucket", bucket=bucket_name)
+    try:
+        # us-east-1 must not supply a LocationConstraint (AWS API requirement).
+        s3_client.create_bucket(Bucket=bucket_name)  # type: ignore[attr-defined]
+        logger.info("Created S3 image bucket", bucket=bucket_name)
+    except ClientError as exc:
+        code = exc.response["Error"]["Code"]
+        if code in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+            logger.info("S3 image bucket already exists, skipping", bucket=bucket_name)
+        else:
+            raise
+
+    # Enable EventBridge notifications so s3:ObjectCreated events reach the
+    # ingestion EventBridge rule. Idempotent — safe to set on every run.
+    s3_client.put_bucket_notification_configuration(  # type: ignore[attr-defined]
+        Bucket=bucket_name,
+        NotificationConfiguration={"EventBridgeConfiguration": {}},
+    )
+    logger.info("Enabled EventBridge notifications on image bucket", bucket=bucket_name)
 
 
 def create_vector_bucket_and_index(s3vectors_client: object, bucket_name: str) -> None:
     """Create the S3 Vector bucket and its ``images`` index for a collection.
 
+    Idempotent: an existing vector bucket or index (S3 Vectors raises
+    ``ConflictException``) is left in place and that step is skipped.
+
     Args:
         s3vectors_client: A boto3 ``s3vectors`` client.
         bucket_name: The vector bucket name to create.
     """
-    s3vectors_client.create_vector_bucket(vectorBucketName=bucket_name)  # type: ignore[attr-defined]
-    logger.info("Created S3 Vector bucket", bucket=bucket_name)
+    try:
+        s3vectors_client.create_vector_bucket(vectorBucketName=bucket_name)  # type: ignore[attr-defined]
+        logger.info("Created S3 Vector bucket", bucket=bucket_name)
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConflictException":
+            logger.info("S3 Vector bucket already exists, skipping", bucket=bucket_name)
+        else:
+            raise
 
-    s3vectors_client.create_index(  # type: ignore[attr-defined]
-        vectorBucketName=bucket_name,
-        indexName=VECTOR_INDEX_NAME,
-        dataType=VECTOR_DATA_TYPE,
-        dimension=VECTOR_DIMENSION,
-        distanceMetric=VECTOR_DISTANCE_METRIC,
-        # Empty list => no metadata keys are non-filterable, i.e. all keys are
-        # filterable by default.
-        metadataConfiguration={"nonFilterableMetadataKeys": []},
-    )
-    logger.info(
-        "Created S3 Vectors index",
-        bucket=bucket_name,
-        index=VECTOR_INDEX_NAME,
-        dimension=VECTOR_DIMENSION,
-    )
+    try:
+        s3vectors_client.create_index(  # type: ignore[attr-defined]
+            vectorBucketName=bucket_name,
+            indexName=VECTOR_INDEX_NAME,
+            dataType=VECTOR_DATA_TYPE,
+            dimension=VECTOR_DIMENSION,
+            distanceMetric=VECTOR_DISTANCE_METRIC,
+            # metadataConfiguration is intentionally omitted: when it is not
+            # supplied, S3 Vectors treats ALL metadata keys as filterable (the
+            # behaviour this project wants). The API rejects an explicit empty
+            # nonFilterableMetadataKeys list (min length 1), so "everything
+            # filterable" must be expressed by omission rather than an empty list.
+        )
+        logger.info(
+            "Created S3 Vectors index",
+            bucket=bucket_name,
+            index=VECTOR_INDEX_NAME,
+            dimension=VECTOR_DIMENSION,
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConflictException":
+            logger.info(
+                "S3 Vectors index already exists, skipping",
+                bucket=bucket_name,
+                index=VECTOR_INDEX_NAME,
+            )
+        else:
+            raise
 
 
 def write_collection_record(
@@ -136,7 +179,7 @@ def write_collection_record(
         "Wrote collection record",
         table=table_name,
         collection_name=collection_name,
-        created=created,
+        created_date=created,
     )
 
 

@@ -176,11 +176,13 @@ All Python code targets **Python 3.12+**. Infrastructure is written in **Terrafo
   - Run `pytest tests/unit tests/property --tb=short` and confirm all tests pass. Ask the user if questions arise.
     - **Passed (2026-09-11):** `104 passed, 1 skipped` (the skip is `test_auth_properties.py` — see task 23.1). ruff, ruff-format, and mypy also clean; `terraform validate` passes for all three env roots.
 
-- [ ] 25. Integration tests (optional)
-  - [ ]* 25.1 Write `tests/integration/test_auth_integration.py`: verify deployed API Gateway returns 401 on missing/invalid JWT; verify structured JSON error body
-  - [ ]* 25.2 Write `tests/integration/test_rate_limit.py`: burst above configured usage plan and assert 429 with structured JSON body
-  - [ ]* 25.3 Write `tests/integration/test_ingestion_e2e.py`: upload a test image to the dev S3 bucket; poll DynamoDB until the record appears (or timeout); assert all required fields are present
-  - [ ]* 25.4 Write `tests/integration/test_presigned_url_expiry.py`: generate a presigned URL with TTL=5 s (test-only override); wait 6 s; assert S3 rejects the expired URL
+- [x] 25. Integration tests (optional)
+  - [x]* 25.1 Write `tests/integration/test_auth_integration.py`: verify deployed API Gateway returns 401 on missing/invalid JWT; verify structured JSON error body
+  - [x]* 25.2 Write `tests/integration/test_rate_limit.py`: burst above configured usage plan and assert 429 with structured JSON body
+    - **Deviation from literal spec (2026-09-14, by decision):** implemented as a **structural** verification rather than a behavioural burst. It asserts the usage plan exists with positive rate/burst throttle settings, is attached to the API stage, and that the `THROTTLED` gateway response returns the `rate_limit.exceeded` JSON contract. Rationale: a behavioural burst test is timing- and account-sensitive (API Gateway throttling is probabilistic under a short burst) and requires a valid Cognito JWT (throttling is applied only after authorization), making it flaky and JWT-dependent; the structural test is deterministic, needs no token, and reliably catches the config regressions that would actually disable throttling. Runtime enforcement itself is AWS-managed. See the README "Integration tests" note.
+  - [x]* 25.3 Write `tests/integration/test_ingestion_e2e.py`: upload a test image to the dev S3 bucket; poll DynamoDB until the record appears (or timeout); assert all required fields are present
+  - [x]* 25.4 Write `tests/integration/test_presigned_url_expiry.py`: generate a presigned URL with TTL=5 s (test-only override); wait 6 s; assert S3 rejects the expired URL
+    - **Done (2026-09-11):** All four integration tests written under `tests/integration/`, plus `tests/integration/conftest.py` (env-driven fixtures, skips when deploy coordinates are unset) and an `integration` pytest marker in `pyproject.toml`. They are excluded from the default suite and are run with `.venv/bin/pytest -m integration tests/integration`. Verified they **skip cleanly** (6 skipped) without a deployed stack and the default suite is unchanged (104 passed, 1 skipped). **Execution against a live deployment is performed by the operator** (requires `aws sso login` + a deployed env + a test collection); README "Deployment" and "Integration tests" sections document the full procedure.
   - _Requirements: 3.2, 8.5, 9.2, 12.1_
 
 ---

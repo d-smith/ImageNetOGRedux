@@ -23,6 +23,11 @@ variable "images_table_name" {
   description = "Name of the DynamoDB images table (from storage module)"
 }
 
+variable "layer_arn" {
+  type        = string
+  description = "ARN of the shared dependencies Lambda layer (from the layer module)"
+}
+
 variable "lambda_memory_mb" {
   type        = number
   default     = 512

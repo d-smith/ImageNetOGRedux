@@ -3,9 +3,13 @@
 #
 # Flow (see design.md "Ingestion Flow"):
 #   1. ParallelEmbedAndDescribe
-#        ├── EmbedBranch:    ingestion_embed    (Retry 2x, Catch → FailIngestion)
-#        └── DescribeBranch: ingestion_describe (Retry 2x, Catch → FailIngestion)
-#   2. StoreMetadata: ingestion_store           (Retry 2x, Catch → FailIngestion)
+#        ├── EmbedBranch:    ingestion_embed    (Retry 2x, Catch → FailEmbed)
+#        └── DescribeBranch: ingestion_describe (Retry 2x, Catch → FailDescribe)
+#   2. StoreMetadata: ingestion_store           (Retry 2x, Catch → FailWorkflow)
+#
+# Note: Step Functions requires state names to be unique across the ENTIRE
+# state machine (not just within a branch), so the two parallel branches use
+# distinct failure-state names (FailEmbed / FailDescribe).
 #
 # The Parallel state emits an array [embedResult, describeResult]. A small
 # result selector merges the original input with the description before the
@@ -48,10 +52,10 @@ locals {
                 Type     = "Task"
                 Resource = aws_lambda_function.ingestion["embed"].arn
                 Retry    = local.sfn_retry
-                Catch    = [{ ErrorEquals = ["States.ALL"], Next = "FailIngestion" }]
+                Catch    = [{ ErrorEquals = ["States.ALL"], Next = "FailEmbed" }]
                 End      = true
               }
-              FailIngestion = { Type = "Fail", Error = "IngestionError", Cause = "Embed branch failed" }
+              FailEmbed = { Type = "Fail", Error = "IngestionError", Cause = "Embed branch failed" }
             }
           },
           {
@@ -61,10 +65,10 @@ locals {
                 Type     = "Task"
                 Resource = aws_lambda_function.ingestion["describe"].arn
                 Retry    = local.sfn_retry
-                Catch    = [{ ErrorEquals = ["States.ALL"], Next = "FailIngestion" }]
+                Catch    = [{ ErrorEquals = ["States.ALL"], Next = "FailDescribe" }]
                 End      = true
               }
-              FailIngestion = { Type = "Fail", Error = "IngestionError", Cause = "Describe branch failed" }
+              FailDescribe = { Type = "Fail", Error = "IngestionError", Cause = "Describe branch failed" }
             }
           }
         ]
