@@ -21,7 +21,13 @@ import requests
 pytestmark = pytest.mark.integration
 
 _TTL_SECONDS = 5
-_WAIT_SECONDS = 7  # a little past TTL to avoid clock-skew flakiness
+# Wait well past the TTL so the URL is expired from S3's perspective even with
+# a few seconds of client clock skew. Presigned SigV4 expiry is evaluated as
+# (X-Amz-Date + X-Amz-Expires) vs S3's clock; X-Amz-Date comes from the client
+# clock, so a client running fast effectively extends the window. A generous
+# margin keeps this deterministic. (If this still fails, the client clock is
+# likely skewed by more than the margin — resync it.)
+_WAIT_SECONDS = 20
 _HTTP_TIMEOUT = 15
 
 

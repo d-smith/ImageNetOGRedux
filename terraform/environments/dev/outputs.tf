@@ -12,6 +12,16 @@ output "rest_api_id" {
   value       = module.api.rest_api_id
 }
 
+output "api_execution_log_group" {
+  description = "CloudWatch Logs group for API Gateway execution logs (per-request authorizer decisions)"
+  value       = module.api.api_execution_log_group
+}
+
+output "api_access_log_group" {
+  description = "CloudWatch Logs group for API Gateway access logs"
+  value       = module.api.api_access_log_group
+}
+
 output "user_pool_id" {
   description = "ID of the Cognito User Pool"
   value       = module.auth.user_pool_id

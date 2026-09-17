@@ -74,9 +74,23 @@ variable "presigned_url_ttl_seconds" {
 }
 
 variable "api_stage_name" {
-  type        = string
-  default     = "v1"
-  description = "API Gateway stage name"
+  type = string
+  # Stage name convention: the stage equals the environment name (dev, staging,
+  # prod), so the invoke URL is
+  #   https://{api-id}.execute-api.{region}.amazonaws.com/{env}/v1/{resource}
+  # Only the host (api-id) varies per environment; the resource path (/v1/...)
+  # is identical everywhere and no environment name is embedded in the resource
+  # tree. An empty string here means "use var.env" (wired in main.tf via the
+  # local below); it must NOT be "v1", which would collide with the /v1 resource
+  # path prefix and cause requests to fall through to API Gateway's default
+  # (IAM) handler — surfacing a misleading 403 IncompleteSignatureException.
+  default     = ""
+  description = "API Gateway stage name. Defaults to the environment name (var.env). Must not equal the API path version prefix (v1)."
+
+  validation {
+    condition     = var.api_stage_name != "v1"
+    error_message = "api_stage_name must not be 'v1' — it collides with the /v1 resource path prefix. Leave it empty to use the environment name."
+  }
 }
 
 variable "layer_arn" {

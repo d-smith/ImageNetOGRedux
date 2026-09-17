@@ -24,11 +24,21 @@ output "rest_api_id" {
 }
 
 output "api_invoke_url" {
-  description = "Invoke URL of the deployed API Gateway stage"
-  value       = aws_api_gateway_stage.api.invoke_url
+  description = "Base invoke URL of the deployed API, including the /v1 path prefix (e.g. https://<id>.execute-api.<region>.amazonaws.com/<stage>/v1). Append resource paths like /collections directly."
+  value       = "${aws_api_gateway_stage.api.invoke_url}/v1"
 }
 
 output "authorizer_id" {
   description = "ID of the Cognito User Pools API Gateway authorizer"
   value       = aws_api_gateway_authorizer.cognito.id
+}
+
+output "api_execution_log_group" {
+  description = "CloudWatch Logs group for API Gateway execution logs (per-request authorizer decisions)"
+  value       = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.api.id}/${local.stage_name}"
+}
+
+output "api_access_log_group" {
+  description = "CloudWatch Logs group for API Gateway access logs"
+  value       = aws_cloudwatch_log_group.api_access.name
 }

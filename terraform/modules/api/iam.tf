@@ -5,6 +5,9 @@ locals {
   account_id  = data.aws_caller_identity.current.account_id
   region      = data.aws_region.current.name
   name_prefix = "${var.env}-imagenetog"
+
+  # Stage name defaults to the environment name when not explicitly set.
+  stage_name = var.api_stage_name != "" ? var.api_stage_name : var.env
 }
 
 # ---------------------------------------------------------------------------

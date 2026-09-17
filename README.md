@@ -320,8 +320,8 @@ invoke them without a deployment.
    export AWS_REGION=us-east-1
    export IMAGENETOG_ENV=dev
 
-   # From `terraform output api_invoke_url`:
-   export IMAGENETOG_API_BASE_URL="https://<rest-api-id>.execute-api.us-east-1.amazonaws.com/v1"
+   # Read the base URL straight from Terraform (already includes /dev/v1):
+   export IMAGENETOG_API_BASE_URL="$(terraform -chdir=terraform/environments/dev output -raw api_invoke_url)"
 
    # An existing collection created via create_collection.py:
    export IMAGENETOG_TEST_COLLECTION=my-collection
@@ -438,25 +438,37 @@ aws cognito-idp admin-create-user \
 
 # Set a permanent password so the account is immediately usable
 # (must satisfy the pool policy: >=12 chars, upper/lower/number/symbol).
+# Choose your own value; do not commit it anywhere.
 aws cognito-idp admin-set-user-password \
   --user-pool-id "$USER_POOL_ID" \
   --username "tester@example.com" \
-  --password 'Chang3Me!Now-2024' \
+  --password "$TEST_USER_PASSWORD" \
   --permanent
 ```
 
-> The password above is a throwaway example for a **dev** pool. Do not reuse it
-> or commit real credentials anywhere.
+> Set `TEST_USER_PASSWORD` in your shell first (e.g.
+> `export TEST_USER_PASSWORD='...'`) with a value satisfying the pool policy.
+> It is a throwaway credential for a **dev** pool — never reuse it or commit it
+> anywhere.
 
 #### Read the deployment coordinates
 
 ```bash
 cd terraform/environments/dev
-terraform output rest_api_id           # -> baseUrl host
+terraform output api_invoke_url        # -> baseUrl (already includes /{env}/v1)
+terraform output rest_api_id           # -> baseUrl host (if building the URL by hand)
 terraform output app_client_id         # -> appClientId
 terraform output hosted_ui_domain      # -> hostedUiDomain prefix
-terraform output hosted_ui_login_url   # -> open this in a browser
+terraform output hosted_ui_login_url   # -> open this in a browser (browser flow)
 ```
+
+> **URL convention.** The API Gateway **stage name equals the environment name**
+> (`dev`, `staging`, `prod`), and the API version lives in the resource path
+> (`/v1`). So the invoke URL is
+> `https://<rest_api_id>.execute-api.us-east-1.amazonaws.com/<env>/v1` — for dev,
+> `.../dev/v1`. Only the host varies between environments; the `/v1/...` path is
+> identical everywhere. The stage name must never be `v1` (it would collide with
+> the `/v1` path prefix); a Terraform validation enforces this.
 
 #### Populate the Bruno `dev` environment
 
@@ -465,7 +477,7 @@ placeholders — no real values are committed):
 
 | Variable | Value |
 |---|---|
-| `baseUrl` | `https://<rest_api_id>.execute-api.us-east-1.amazonaws.com/v1` |
+| `baseUrl` | `https://<rest_api_id>.execute-api.us-east-1.amazonaws.com/dev/v1` (from `terraform output api_invoke_url`) |
 | `hostedUiDomain` | `<hosted_ui_domain>.auth.us-east-1.amazoncognito.com` |
 | `appClientId` | `terraform output app_client_id` |
 | `redirectUri` | `https://localhost:3000/callback` (matches the app client) |
@@ -474,7 +486,51 @@ placeholders — no real values are committed):
 | `testCollection` | an existing collection name (e.g. `my-collection`) |
 | `testImageKey` | an existing image key in that collection |
 
-#### Obtain a token and run requests
+#### Obtain an ID token for Bruno
+
+You need a Cognito **ID token** in the Bruno `authToken` variable. Send it as
+the **raw** `Authorization` header value — **no `Bearer` prefix** (that is how
+the API Gateway Cognito authorizer expects it). There are two ways to get one.
+
+##### Option A — AWS CLI (fastest; recommended for quick testing)
+
+The app client enables `ALLOW_USER_PASSWORD_AUTH`, so you can mint an ID token
+directly with `initiate-auth` — no browser needed. Use the test user created
+above:
+
+```bash
+export AWS_PROFILE=terraform
+export AWS_REGION=us-east-1
+cd terraform/environments/dev
+
+CLIENT_ID="$(terraform output -raw app_client_id)"
+
+ID_TOKEN="$(aws cognito-idp initiate-auth \
+  --auth-flow USER_PASSWORD_AUTH \
+  --client-id "$CLIENT_ID" \
+  --auth-parameters USERNAME=tester@example.com,PASSWORD="$TEST_USER_PASSWORD" \
+  --query 'AuthenticationResult.IdToken' --output text)"
+
+echo "$ID_TOKEN"   # copy this value into the Bruno `authToken` variable
+```
+
+Paste the `ID_TOKEN` value into the Bruno **dev** environment's `authToken`
+variable, then run any request under **Collections** or **Images**. You can also
+sanity-check the token straight from curl before using Bruno:
+
+```bash
+BASE_URL="$(terraform output -raw api_invoke_url)"   # -> https://<id>.execute-api.us-east-1.amazonaws.com/dev/v1
+curl -i -H "Authorization: $ID_TOKEN" "$BASE_URL/collections"   # -> 200 + JSON
+```
+
+ID tokens expire after ~1 hour — re-run `initiate-auth` to get a fresh one.
+
+> Do **not** paste real tokens into the committed `environments/dev.bru`
+> (Bruno persists edited values back to that file). Keep real values in a
+> git-ignored `environments/dev.local.bru` instead — `bruno/**/environments/*.local.bru`
+> is already git-ignored.
+
+##### Option B — browser (Cognito hosted UI)
 
 1. Open the `hosted_ui_login_url` value in a browser and log in with the test
    user.
@@ -483,13 +539,13 @@ placeholders — no real values are committed):
 3. Paste it into the Bruno `authCode` variable.
 4. Run **Auth → Get Token**. Its post-response script stores the ID token in
    `authToken`, so all other requests authenticate automatically.
-5. Run any request under **Collections** or **Images**. Tokens expire after
-   ~1 hour (the app client's default validity) — repeat steps 1–4 to refresh.
+5. Run any request under **Collections** or **Images**. Repeat steps 1–4 to
+   refresh when the token expires.
 
 The collection includes happy-path and negative-path requests (not-found → 404
 `resource.not_found`; cleared token → 401 `auth.unauthorized`; traversal key →
 400 `param.invalid`) with lightweight assertions on status and key fields.
 
-> **No secrets are committed.** The Bruno environment contains only
+> **No secrets are committed.** The Bruno environment ships with only
 > placeholders; real tokens and codes stay local. `bruno/**/.env` and
 > `bruno/**/environments/*.local.bru` are git-ignored.

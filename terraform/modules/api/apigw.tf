@@ -134,12 +134,23 @@ resource "aws_api_gateway_deployment" "api" {
   rest_api_id = aws_api_gateway_rest_api.api.id
 
   triggers = {
+    # Hash the *configuration* that affects the deployed API — not just resource
+    # ids. Resource ids (method/integration/authorizer id) are stable across
+    # in-place updates: attaching or changing a method's authorization does NOT
+    # change its id, so hashing ids alone can leave the deployment snapshot
+    # frozen with stale (e.g. pre-authorizer, IAM-default) method config. We
+    # therefore hash the authorization attributes and integration wiring so any
+    # auth/integration change forces a fresh deployment snapshot.
     redeployment = sha1(jsonencode([
       aws_api_gateway_authorizer.cognito.id,
       [for k in sort(keys(local.api_routes)) : local.api_routes[k]],
       [for k in sort(keys(local.api_routes)) : aws_api_gateway_method.get[k].id],
+      [for k in sort(keys(local.api_routes)) : aws_api_gateway_method.get[k].authorization],
+      [for k in sort(keys(local.api_routes)) : aws_api_gateway_method.get[k].authorizer_id],
       [for k in sort(keys(local.api_routes)) : aws_api_gateway_integration.get[k].id],
+      [for k in sort(keys(local.api_routes)) : aws_api_gateway_integration.get[k].uri],
       aws_api_gateway_gateway_response.unauthorized.id,
+      aws_api_gateway_gateway_response.access_denied.id,
       aws_api_gateway_gateway_response.throttled.id,
     ]))
   }
@@ -151,6 +162,7 @@ resource "aws_api_gateway_deployment" "api" {
   depends_on = [
     aws_api_gateway_integration.get,
     aws_api_gateway_gateway_response.unauthorized,
+    aws_api_gateway_gateway_response.access_denied,
     aws_api_gateway_gateway_response.throttled,
   ]
 }
@@ -158,9 +170,45 @@ resource "aws_api_gateway_deployment" "api" {
 resource "aws_api_gateway_stage" "api" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   deployment_id = aws_api_gateway_deployment.api.id
-  stage_name    = var.api_stage_name
+  stage_name    = local.stage_name
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_access.arn
+    format = jsonencode({
+      requestId          = "$context.requestId"
+      ip                 = "$context.identity.sourceIp"
+      httpMethod         = "$context.httpMethod"
+      resourcePath       = "$context.resourcePath"
+      status             = "$context.status"
+      authorizerError    = "$context.authorizer.error"
+      authorizeStatus    = "$context.authorize.status"
+      authenticateStatus = "$context.authenticate.status"
+      responseLatency    = "$context.responseLatency"
+      errorMessage       = "$context.error.message"
+      errorResponseType  = "$context.error.responseType"
+    })
+  }
+
+  # Ensure the account-level CloudWatch role exists before the stage enables
+  # logging, otherwise API Gateway rejects the logging configuration.
+  depends_on = [aws_api_gateway_account.this]
 
   tags = merge(var.tags, { Component = "api" })
+}
+
+# Execution logging (INFO + full data trace) for every method on the stage.
+# This surfaces the per-request authorizer decision in the
+# API-Gateway-Execution-Logs_<api-id>/<stage> log group.
+resource "aws_api_gateway_method_settings" "api" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  stage_name  = aws_api_gateway_stage.api.stage_name
+  method_path = "*/*"
+
+  settings {
+    logging_level      = "INFO"
+    data_trace_enabled = true
+    metrics_enabled    = true
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -170,6 +218,29 @@ resource "aws_api_gateway_stage" "api" {
 resource "aws_api_gateway_gateway_response" "unauthorized" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   response_type = "UNAUTHORIZED"
+  status_code   = "401"
+
+  response_parameters = {
+    "gatewayresponse.header.Content-Type" = "'application/json'"
+  }
+
+  response_templates = {
+    "application/json" = jsonencode({
+      error   = "auth.unauthorized"
+      message = "Authentication is required to access this resource."
+    })
+  }
+}
+
+# API Gateway's COGNITO_USER_POOLS authorizer returns ACCESS_DENIED (not just
+# UNAUTHORIZED) for a token it receives but cannot validate. Without overriding
+# this response, such rejections surface as API Gateway's raw default body
+# (an "IncompleteSignatureException / Authorization header requires 'Credential'
+# ..." message), which is misleading. Override it to the same structured
+# contract so a rejected token returns a clean 401 auth.unauthorized.
+resource "aws_api_gateway_gateway_response" "access_denied" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  response_type = "ACCESS_DENIED"
   status_code   = "401"
 
   response_parameters = {

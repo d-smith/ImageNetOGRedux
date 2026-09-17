@@ -23,9 +23,11 @@ info:
     the accompanying Bruno collection.
 
 servers:
-  - url: https://{restApiId}.execute-api.{region}.amazonaws.com/{stage}
-    description: Deployed API Gateway stage. Read the concrete values from
-      `terraform output` (`rest_api_id`, region is `us-east-1`, stage is `v1`).
+  - url: https://{restApiId}.execute-api.{region}.amazonaws.com/{stage}/v1
+    description: Deployed API Gateway stage. The stage name equals the environment
+      name (dev, staging, prod); the API version (v1) is a fixed path segment.
+      Read the values from `terraform output` (`rest_api_id`; region is
+      `us-east-1`).
     variables:
       restApiId:
         default: REST_API_ID
@@ -34,8 +36,8 @@ servers:
         default: us-east-1
         description: AWS region of the deployment.
       stage:
-        default: v1
-        description: API Gateway stage name.
+        default: dev
+        description: API Gateway stage name, equal to the environment name (dev, staging, prod).
 
 security:
   - cognitoAuth: []
