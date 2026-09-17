@@ -30,3 +30,9 @@ variable "hosted_ui_domain_suffix" {
   default     = "auth"
   description = "Suffix appended to the {env}-imagenetog Cognito hosted-UI domain prefix. The full prefix ({env}-imagenetog-{suffix}) must be globally unique within the region."
 }
+
+variable "enable_user_password_auth" {
+  type        = bool
+  default     = false
+  description = "Enable the ALLOW_USER_PASSWORD_AUTH flow on the app client. Convenient for dev/test token minting via `aws cognito-idp initiate-auth`, but weaker than SRP (the password transits to the service). Keep false in production."
+}

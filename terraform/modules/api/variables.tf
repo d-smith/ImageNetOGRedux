@@ -109,3 +109,9 @@ variable "api_gateway_burst_limit" {
   default     = 200
   description = "Maximum burst requests for the API Gateway usage plan"
 }
+
+variable "enable_data_trace" {
+  type        = bool
+  default     = false
+  description = "Enable full request/response data trace logging on the API stage. Useful for debugging in dev/staging, but verbose and can capture sensitive data in CloudWatch — keep false in production. (INFO execution logging stays on regardless.)"
+}

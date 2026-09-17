@@ -22,6 +22,12 @@ section):
     IMAGENETOG_TEST_COLLECTION        An existing collection name to exercise ingestion against.
     IMAGENETOG_TEST_IMAGE_BUCKET      Image S3 bucket for that collection
                               (default {env}-imagenetog-{collection}-images).
+    IMAGENETOG_APP_CLIENT_ID  Cognito app client id (from `terraform output app_client_id`),
+                              used to mint an ID token for happy-path API tests.
+    IMAGENETOG_TEST_USERNAME  Cognito test user (email) for token minting.
+    IMAGENETOG_TEST_PASSWORD  Password for that user (USER_PASSWORD_AUTH; dev/staging only).
+    IMAGENETOG_REST_API_ID    API Gateway REST API id (from `terraform output rest_api_id`),
+                              used by the stage/path structural checks.
 """
 
 import os
@@ -53,6 +59,45 @@ def env_name() -> str:
 def api_base_url() -> str:
     """Deployed API Gateway stage base URL (without a trailing slash)."""
     return _require("IMAGENETOG_API_BASE_URL").rstrip("/")
+
+
+@pytest.fixture(scope="session")
+def app_client_id() -> str:
+    """Cognito app client id used to mint tokens (from terraform output)."""
+    return _require("IMAGENETOG_APP_CLIENT_ID")
+
+
+@pytest.fixture(scope="session")
+def rest_api_id() -> str:
+    """API Gateway REST API id (from terraform output rest_api_id)."""
+    return _require("IMAGENETOG_REST_API_ID")
+
+
+@pytest.fixture(scope="session")
+def id_token(app_client_id: str, boto_session: "boto3.Session") -> str:
+    """Mint a Cognito ID token via USER_PASSWORD_AUTH for happy-path tests.
+
+    Requires ``IMAGENETOG_APP_CLIENT_ID``, ``IMAGENETOG_TEST_USERNAME`` and
+    ``IMAGENETOG_TEST_PASSWORD`` (and the app client to have
+    ``ALLOW_USER_PASSWORD_AUTH`` enabled — true for dev/staging). Skips cleanly
+    when any of these is unavailable, so the suite stays safe to run without a
+    token-capable environment.
+    """
+    username = _require("IMAGENETOG_TEST_USERNAME")
+    password = _require("IMAGENETOG_TEST_PASSWORD")
+    client = boto_session.client("cognito-idp")
+    try:
+        resp = client.initiate_auth(
+            AuthFlow="USER_PASSWORD_AUTH",
+            ClientId=app_client_id,
+            AuthParameters={"USERNAME": username, "PASSWORD": password},
+        )
+    except Exception as exc:  # noqa: BLE001 — surface as skip, not error
+        pytest.skip(f"could not mint an ID token via USER_PASSWORD_AUTH: {exc}")
+    token = resp.get("AuthenticationResult", {}).get("IdToken")
+    if not token:
+        pytest.skip("initiate-auth returned no IdToken (challenge required?)")
+    return str(token)
 
 
 @pytest.fixture(scope="session")

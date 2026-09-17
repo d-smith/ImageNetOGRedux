@@ -98,16 +98,18 @@ resource "aws_cognito_user_pool_client" "api" {
 
   # Auth flows enabled on this app client.
   #   - ALLOW_USER_SRP_AUTH: the secure default used by the hosted UI / SDKs.
-  #   - ALLOW_USER_PASSWORD_AUTH: enables the plain `initiate-auth
-  #     USER_PASSWORD_AUTH` username/password flow, so a token can be obtained
-  #     directly via the AWS CLI (same flow as the lambda-api reference project).
-  #     This is convenient for dev/testing; review before enabling for prod.
+  #   - ALLOW_USER_PASSWORD_AUTH: (conditional) enables the plain `initiate-auth
+  #     USER_PASSWORD_AUTH` username/password flow for direct token minting via
+  #     the AWS CLI. Convenient for dev/test, weaker than SRP — gated behind
+  #     var.enable_user_password_auth (default false; keep false in prod).
   #   - ALLOW_REFRESH_TOKEN_AUTH: token refresh.
-  explicit_auth_flows = [
-    "ALLOW_USER_SRP_AUTH",
-    "ALLOW_USER_PASSWORD_AUTH",
-    "ALLOW_REFRESH_TOKEN_AUTH",
-  ]
+  explicit_auth_flows = concat(
+    [
+      "ALLOW_USER_SRP_AUTH",
+      "ALLOW_REFRESH_TOKEN_AUTH",
+    ],
+    var.enable_user_password_auth ? ["ALLOW_USER_PASSWORD_AUTH"] : [],
+  )
 }
 
 # ---------------------------------------------------------------------------

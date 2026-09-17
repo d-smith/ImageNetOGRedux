@@ -67,6 +67,9 @@ module "auth" {
 
   env  = var.env
   tags = local.common_tags
+  # Production: keep USER_PASSWORD_AUTH disabled (SRP only). Tokens for prod
+  # come via the hosted UI / SRP, not plain password auth.
+  enable_user_password_auth = false
 }
 
 module "storage" {
@@ -104,6 +107,9 @@ module "api" {
   log_retention_days      = var.log_retention_days
   api_gateway_rate_limit  = var.api_gateway_rate_limit
   api_gateway_burst_limit = var.api_gateway_burst_limit
+  # Production: no full request/response data-trace logging (verbose + can
+  # capture sensitive data). INFO execution logging stays on.
+  enable_data_trace = false
 }
 
 # ---------------------------------------------------------------------------

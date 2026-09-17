@@ -61,8 +61,9 @@ module "layer" {
 module "auth" {
   source = "../../modules/auth"
 
-  env  = var.env
-  tags = local.common_tags
+  env                       = var.env
+  tags                      = local.common_tags
+  enable_user_password_auth = true
 }
 
 module "storage" {
@@ -100,6 +101,7 @@ module "api" {
   log_retention_days      = var.log_retention_days
   api_gateway_rate_limit  = var.api_gateway_rate_limit
   api_gateway_burst_limit = var.api_gateway_burst_limit
+  enable_data_trace       = true
 }
 
 # ---------------------------------------------------------------------------

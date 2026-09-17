@@ -335,6 +335,16 @@ invoke them without a deployment.
    export IMAGENETOG_TEST_IMAGE_BUCKET=dev-imagenetog-my-collection-images
    ```
 
+4. For the authenticated happy-path and stage-routing tests, also export the
+   app client id, a test user, and the REST API id:
+
+   ```bash
+   export IMAGENETOG_APP_CLIENT_ID="$(terraform -chdir=terraform/environments/dev output -raw app_client_id)"
+   export IMAGENETOG_REST_API_ID="$(terraform -chdir=terraform/environments/dev output -raw rest_api_id)"
+   export IMAGENETOG_TEST_USERNAME=tester@example.com
+   export IMAGENETOG_TEST_PASSWORD="$TEST_USER_PASSWORD"   # dev/staging: USER_PASSWORD_AUTH is enabled
+   ```
+
 ### Run
 
 ```bash
@@ -345,7 +355,9 @@ What each test needs and does:
 
 | Test | Requires | Behaviour |
 |---|---|---|
-| `test_auth_integration.py` | `IMAGENETOG_API_BASE_URL` | Asserts the deployed API returns `401` + structured JSON for missing / invalid / non-Bearer tokens. |
+| `test_auth_integration.py` | `IMAGENETOG_API_BASE_URL` | Asserts the deployed API returns `401` + structured JSON for missing / invalid / non-Bearer tokens, **and** that a rejection is never an IAM/SigV4 `IncompleteSignatureException` (which would indicate a stage/path misconfiguration). |
+| `test_api_happy_path.py` | `IMAGENETOG_API_BASE_URL`, `IMAGENETOG_APP_CLIENT_ID`, `IMAGENETOG_TEST_USERNAME`, `IMAGENETOG_TEST_PASSWORD` | Mints a real ID token and asserts an authenticated `GET /collections` returns `200` with the documented envelope — the positive counterpart that catches a misrouted/broken API a rejection-only test would miss. |
+| `test_stage_routing.py` | `IMAGENETOG_REST_API_ID` (+ AWS creds) | Structural check: asserts the API Gateway stage name does not collide with a top-level resource path segment (e.g. a stage named `v1` vs the `/v1` prefix), which would make routes unreachable. |
 | `test_rate_limit.py` | `IMAGENETOG_API_BASE_URL` (+ AWS creds) | Verifies the rate-limiting **configuration**: the usage plan exists with positive rate/burst throttle settings, is attached to the API stage, and the `THROTTLED` gateway response returns the `rate_limit.exceeded` JSON contract. |
 | `test_ingestion_e2e.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Uploads a test image to the collection bucket and polls DynamoDB (up to 180s) until the metadata record appears with all required fields. |
 | `test_presigned_url_expiry.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Generates a 5-second presigned URL, waits past expiry, and asserts S3 returns `403`. |

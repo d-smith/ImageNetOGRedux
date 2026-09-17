@@ -40,11 +40,26 @@ def _assert_rejected(response: requests.Response) -> None:
     When the rejection is a 401 (the Cognito ``UNAUTHORIZED`` gateway-response
     path), also assert the project's structured JSON error contract
     (``{"error": "<token>", "message": "<msg>"}`` with a JSON content type).
-    A 403 uses API Gateway's default body and is accepted as-is.
+
+    Critically, a 403 must NOT be an IAM/SigV4 rejection
+    (``IncompleteSignatureException`` / "Authorization header requires
+    'Credential'/'Signature'/'SignedHeaders'"). That specific error means the
+    request was routed to API Gateway's IAM authorizer instead of the Cognito
+    authorizer — the signature of a stage-name/``/v1``-path collision — and must
+    be treated as a failure, not an acceptable rejection.
     """
     assert response.status_code in _REJECTED, (
         f"expected one of {_REJECTED} (unauthenticated request must be rejected), "
         f"got {response.status_code}: {response.text[:200]}"
+    )
+
+    # A Cognito-protected route never rejects via IAM/SigV4. If it does, the
+    # route is misconfigured (e.g. stage name collides with the /v1 prefix).
+    text = response.text
+    assert "IncompleteSignatureException" not in text and "requires 'Signature'" not in text, (
+        "unauthenticated request was rejected by the IAM/SigV4 authorizer, not "
+        "the Cognito authorizer — the route is misconfigured (check the stage "
+        f"name vs the /v1 path prefix). Body: {text[:300]}"
     )
 
     if response.status_code == 401:
