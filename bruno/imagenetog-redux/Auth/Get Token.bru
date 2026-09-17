@@ -1,0 +1,63 @@
+meta {
+  name: Get Token
+  type: http
+  seq: 1
+}
+
+post {
+  url: https://{{hostedUiDomain}}/oauth2/token
+  body: formUrlEncoded
+  auth: none
+}
+
+headers {
+  content-type: application/x-www-form-urlencoded
+}
+
+body:form-urlencoded {
+  grant_type: authorization_code
+  client_id: {{appClientId}}
+  code: {{authCode}}
+  redirect_uri: {{redirectUri}}
+}
+
+script:post-response {
+  // On a successful exchange, store the ID token as authToken so every other
+  // request authenticates via the collection-level Authorization header.
+  // The API Gateway Cognito authorizer (no scopes configured) accepts the ID
+  // token as the raw Authorization header value.
+  if (res.status === 200 && res.body && res.body.id_token) {
+    bru.setEnvVar("authToken", res.body.id_token);
+    if (res.body.refresh_token) {
+      bru.setEnvVar("refreshToken", res.body.refresh_token);
+    }
+  }
+}
+
+tests {
+  test("token exchange succeeds", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("response contains an id_token", function() {
+    expect(res.body.id_token).to.be.a("string");
+  });
+}
+
+docs {
+  # Get Token (authorization-code exchange)
+
+  Prerequisite: obtain an authorization `code` via the browser.
+
+  1. Open the hosted-UI authorize URL (from `terraform output hosted_ui_login_url`).
+  2. Log in with a Cognito user (see README for seeding a dev test user).
+  3. The browser redirects to `https://localhost:3000/callback?code=<CODE>`.
+     Nothing runs on localhost:3000 — just copy the `code` value from the URL.
+  4. Paste it into the `authCode` environment variable and run this request.
+
+  On success, the post-response script stores `id_token` in `authToken`. All
+  other requests then authenticate automatically. Tokens expire after 1 hour
+  (default) — repeat this flow to refresh.
+
+  This request uses `auth: none` because the token exchange itself is
+  unauthenticated (and the app client is public, so no client secret is sent).
+}

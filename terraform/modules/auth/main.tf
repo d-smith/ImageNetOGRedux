@@ -2,6 +2,10 @@ locals {
   name_prefix = "${var.env}-imagenetog"
 }
 
+# Region is needed to construct the Cognito hosted-UI base URL. Sourced from a
+# data source rather than hardcoded (per terraform-conventions).
+data "aws_region" "current" {}
+
 # ---------------------------------------------------------------------------
 # Cognito User Pool
 # ---------------------------------------------------------------------------
@@ -92,8 +96,32 @@ resource "aws_cognito_user_pool_client" "api" {
   read_attributes  = ["email", "email_verified"]
   write_attributes = ["email"]
 
-  explicit_auth_flows = [
-    "ALLOW_USER_SRP_AUTH",
-    "ALLOW_REFRESH_TOKEN_AUTH",
-  ]
+  # Auth flows enabled on this app client.
+  #   - ALLOW_USER_SRP_AUTH: the secure default used by the hosted UI / SDKs.
+  #   - ALLOW_USER_PASSWORD_AUTH: (conditional) enables the plain `initiate-auth
+  #     USER_PASSWORD_AUTH` username/password flow for direct token minting via
+  #     the AWS CLI. Convenient for dev/test, weaker than SRP — gated behind
+  #     var.enable_user_password_auth (default false; keep false in prod).
+  #   - ALLOW_REFRESH_TOKEN_AUTH: token refresh.
+  explicit_auth_flows = concat(
+    [
+      "ALLOW_USER_SRP_AUTH",
+      "ALLOW_REFRESH_TOKEN_AUTH",
+    ],
+    var.enable_user_password_auth ? ["ALLOW_USER_PASSWORD_AUTH"] : [],
+  )
+}
+
+# ---------------------------------------------------------------------------
+# Cognito hosted-UI domain
+#
+# Provisions the Cognito-prefixed hosted-UI domain so the hosted login page has
+# a resolvable URL. Prefix domains resolve to
+# ``https://<domain>.auth.<region>.amazoncognito.com``. The domain prefix must
+# be globally unique within the region; override ``hosted_ui_domain_suffix`` per
+# environment if the default collides.
+# ---------------------------------------------------------------------------
+resource "aws_cognito_user_pool_domain" "hosted_ui" {
+  domain       = "${local.name_prefix}-${var.hosted_ui_domain_suffix}"
+  user_pool_id = aws_cognito_user_pool.main.id
 }

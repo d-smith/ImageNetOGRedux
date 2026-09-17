@@ -185,6 +185,37 @@ def parse_sort(
     return sort_field, order
 
 
+def parse_max_distance(event: dict[str, object]) -> float | None:
+    """Parse and validate the optional ``maxDistance`` query parameter.
+
+    ``maxDistance`` is the maximum cosine distance a description (vector) search
+    result may have to be returned (lower = more similar). When omitted, the
+    service falls back to its configured default. Cosine distance is bounded to
+    ``[0.0, 2.0]``.
+
+    Args:
+        event: The raw API Gateway proxy event dict.
+
+    Returns:
+        The validated distance as a ``float``, or ``None`` when not supplied
+        (meaning "use the configured default").
+
+    Raises:
+        InvalidParameterError: If ``maxDistance`` is not a valid number or is
+            outside the ``[0.0, 2.0]`` range.
+    """
+    raw = _get_qs(event, "maxDistance")
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        raise InvalidParameterError("maxDistance", "must be a number") from None
+    if value < 0.0 or value > 2.0:
+        raise InvalidParameterError("maxDistance", "must be between 0.0 and 2.0")
+    return value
+
+
 def parse_date(value: str, param_name: str) -> date:
     """Parse an ISO 8601 date string (YYYY-MM-DD).
 

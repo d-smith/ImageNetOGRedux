@@ -1,0 +1,29 @@
+meta {
+  name: List Images (search)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}/images?description=a sunset over mountains&limit=10
+}
+
+params:query {
+  description: a sunset over mountains
+  limit: 10
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("returns a ranked result set", function() {
+    expect(res.body.items).to.be.an("array");
+  });
+}
+
+docs {
+  Description (vector) search mode: returns the ranked top-K nearest images.
+  offset is ignored in this mode; total equals the number of ranked results.
+  The description is truncated server-side to 500 characters.
+}

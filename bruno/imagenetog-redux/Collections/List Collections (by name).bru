@@ -1,0 +1,23 @@
+meta {
+  name: List Collections (by name)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/collections?name={{testCollection}}
+}
+
+params:query {
+  name: {{testCollection}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}
+
+docs {
+  Case-insensitive name-prefix filter. Uses the testCollection value as the prefix.
+}

@@ -1,0 +1,35 @@
+meta {
+  name: List Collections (unauthenticated)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/collections
+  auth: none
+}
+
+headers {
+  ~Authorization: 
+}
+
+script:pre-request {
+  // Remove the collection-level Authorization header so this request is sent
+  // with no credentials, demonstrating the 401 contract.
+  req.setHeader("Authorization", "");
+}
+
+tests {
+  test("returns 401", function() {
+    expect(res.status).to.equal(401);
+  });
+  test("uses the auth.unauthorized token", function() {
+    expect(res.body.error).to.equal("auth.unauthorized");
+  });
+}
+
+docs {
+  Negative path: an unauthenticated request returns 401 with the
+  `auth.unauthorized` token (emitted by the API Gateway UNAUTHORIZED gateway
+  response). The pre-request script strips the inherited Authorization header.
+}

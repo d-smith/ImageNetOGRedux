@@ -1,0 +1,23 @@
+meta {
+  name: Get Collection
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("returns the collection shape", function() {
+    expect(res.body.name).to.be.a("string");
+    expect(res.body.created).to.be.a("string");
+  });
+}
+
+docs {
+  Fetch a single collection by name (from the testCollection variable).
+}

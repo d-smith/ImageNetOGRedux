@@ -309,6 +309,42 @@ selected explicitly with `-m integration`. Each test **skips** (rather than
 fails) when the environment variables it needs are not set, so it is safe to
 invoke them without a deployment.
 
+### Quick start (run everything)
+
+Copy-paste this from the **repo root** to configure and run the full suite
+against `dev`. Edit only the three values in step 2; everything else is read
+from Terraform.
+
+```bash
+# 1. Auth + region
+aws sso login --profile terraform
+export AWS_PROFILE=terraform
+export AWS_REGION=us-east-1
+export IMAGENETOG_ENV=dev
+
+# 2. FILL THESE IN (Terraform can't derive them):
+export IMAGENETOG_TEST_COLLECTION="my-collection"        # an existing collection
+export IMAGENETOG_TEST_USERNAME="tester@example.com"     # a confirmed Cognito user
+export IMAGENETOG_TEST_PASSWORD="REPLACE_WITH_PASSWORD"  # that user's permanent password
+
+# 3. (Optional) create/confirm the test user with the password above:
+USER_POOL_ID="$(terraform -chdir=terraform/environments/dev output -raw user_pool_id)"
+aws cognito-idp admin-create-user --user-pool-id "$USER_POOL_ID" \
+  --username "$IMAGENETOG_TEST_USERNAME" --message-action SUPPRESS 2>/dev/null || true
+aws cognito-idp admin-set-user-password --user-pool-id "$USER_POOL_ID" \
+  --username "$IMAGENETOG_TEST_USERNAME" --password "$IMAGENETOG_TEST_PASSWORD" --permanent
+
+# 4. Auto-derived from Terraform outputs:
+export IMAGENETOG_API_BASE_URL="$(terraform -chdir=terraform/environments/dev output -raw api_invoke_url)"
+export IMAGENETOG_APP_CLIENT_ID="$(terraform -chdir=terraform/environments/dev output -raw app_client_id)"
+export IMAGENETOG_REST_API_ID="$(terraform -chdir=terraform/environments/dev output -raw rest_api_id)"
+
+# 5. Run the full suite
+.venv/bin/pytest -m integration tests/integration --no-cov -v
+```
+
+The per-variable detail and what each test does are documented below.
+
 ### Setup
 
 1. Deploy an environment and create a test collection (see **Deployment**).
@@ -320,8 +356,8 @@ invoke them without a deployment.
    export AWS_REGION=us-east-1
    export IMAGENETOG_ENV=dev
 
-   # From `terraform output api_invoke_url`:
-   export IMAGENETOG_API_BASE_URL="https://<rest-api-id>.execute-api.us-east-1.amazonaws.com/v1"
+   # Read the base URL straight from Terraform (already includes /dev/v1):
+   export IMAGENETOG_API_BASE_URL="$(terraform -chdir=terraform/environments/dev output -raw api_invoke_url)"
 
    # An existing collection created via create_collection.py:
    export IMAGENETOG_TEST_COLLECTION=my-collection
@@ -333,6 +369,21 @@ invoke them without a deployment.
    # Override derived defaults if your naming differs:
    export IMAGENETOG_IMAGES_TABLE=dev-imagenetog-images
    export IMAGENETOG_TEST_IMAGE_BUCKET=dev-imagenetog-my-collection-images
+
+   # Override the query used by the description-search test to match the
+   # committed test image (defaults to "a red house in a green field"):
+   export IMAGENETOG_TEST_SEARCH_TERM="a red house in a green field"
+   ```
+
+4. For the authenticated tests (happy-path, description-search, and
+   stage-routing), also export the app client id, a test user, and the REST API
+   id:
+
+   ```bash
+   export IMAGENETOG_APP_CLIENT_ID="$(terraform -chdir=terraform/environments/dev output -raw app_client_id)"
+   export IMAGENETOG_REST_API_ID="$(terraform -chdir=terraform/environments/dev output -raw rest_api_id)"
+   export IMAGENETOG_TEST_USERNAME=tester@example.com
+   export IMAGENETOG_TEST_PASSWORD="$TEST_USER_PASSWORD"   # dev/staging: USER_PASSWORD_AUTH is enabled
    ```
 
 ### Run
@@ -345,9 +396,12 @@ What each test needs and does:
 
 | Test | Requires | Behaviour |
 |---|---|---|
-| `test_auth_integration.py` | `IMAGENETOG_API_BASE_URL` | Asserts the deployed API returns `401` + structured JSON for missing / invalid / non-Bearer tokens. |
+| `test_auth_integration.py` | `IMAGENETOG_API_BASE_URL` | Asserts the deployed API returns `401` + structured JSON for missing / invalid / non-Bearer tokens, **and** that a rejection is never an IAM/SigV4 `IncompleteSignatureException` (which would indicate a stage/path misconfiguration). |
+| `test_api_happy_path.py` | `IMAGENETOG_API_BASE_URL`, `IMAGENETOG_APP_CLIENT_ID`, `IMAGENETOG_TEST_USERNAME`, `IMAGENETOG_TEST_PASSWORD` | Mints a real ID token and asserts an authenticated `GET /collections` returns `200` with the documented envelope — the positive counterpart that catches a misrouted/broken API a rejection-only test would miss. |
+| `test_stage_routing.py` | `IMAGENETOG_REST_API_ID` (+ AWS creds) | Structural check: asserts the API Gateway stage name does not collide with a top-level resource path segment (e.g. a stage named `v1` vs the `/v1` prefix), which would make routes unreachable. |
 | `test_rate_limit.py` | `IMAGENETOG_API_BASE_URL` (+ AWS creds) | Verifies the rate-limiting **configuration**: the usage plan exists with positive rate/burst throttle settings, is attached to the API stage, and the `THROTTLED` gateway response returns the `rate_limit.exceeded` JSON contract. |
 | `test_ingestion_e2e.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Uploads a test image to the collection bucket and polls DynamoDB (up to 180s) until the metadata record appears with all required fields. |
+| `test_search_integration.py` | `IMAGENETOG_API_BASE_URL`, `IMAGENETOG_APP_CLIENT_ID`, `IMAGENETOG_TEST_USERNAME`, `IMAGENETOG_TEST_PASSWORD`, `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Exercises the description (vector) search path end-to-end: uploads a committed synthetic image (`tests/integration/assets/red_house_landscape.png`), waits for ingestion, then searches for it and asserts a `200` with the image returned and a numeric `score`. Also checks `maxDistance` override behaviour, `maxDistance` validation (`400 param.invalid`), and that plain date listings carry no `score`. Takes ~30–90s (polls ingestion). |
 | `test_presigned_url_expiry.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Generates a 5-second presigned URL, waits past expiry, and asserts S3 returns `403`. |
 
 Any test whose required variables are unset is reported as **skipped**. To run a
@@ -364,3 +418,188 @@ single integration test:
 > applied only after authorization. The dev throttle values live in
 > `api_gateway_rate_limit` / `api_gateway_burst_limit` in
 > `terraform/environments/dev/terraform.tfvars`.
+
+
+## API spec & Bruno collection
+
+The read API is described by an OpenAPI 3.1 spec, and a
+[Bruno](https://www.usebruno.com/) collection is provided for lightweight manual
+exploratory testing (including obtaining a Cognito token via the browser).
+
+### OpenAPI specification
+
+The spec lives at [`openapi/openapi.yaml`](openapi/openapi.yaml). It describes
+all four read endpoints, their query/path parameters, response schemas, the
+error contract (`param.invalid`, `auth.unauthorized`, `resource.not_found`,
+`method.not_allowed`, `rate_limit.exceeded`, `server.error`), and the Cognito
+OAuth2 security scheme.
+
+Validate or preview it:
+
+```bash
+# Validate (Python; matches the validator used in this repo)
+python3 -m openapi_spec_validator openapi/openapi.yaml
+
+# Or lint / preview with Redocly (Node)
+npx @redocly/cli lint openapi/openapi.yaml
+npx @redocly/cli preview-docs openapi/openapi.yaml
+```
+
+The `servers` URL is templated (`restApiId`, `region`, `stage`); fill
+`restApiId` from `terraform output rest_api_id`. The `authorizationUrl` /
+`tokenUrl` in the security scheme use a `HOSTED_UI_DOMAIN` placeholder — replace
+it with your hosted-UI domain (below) when importing the spec into a tool that
+drives the OAuth flow.
+
+### Bruno collection
+
+The collection lives at [`bruno/imagenetog-redux/`](bruno/imagenetog-redux/).
+Open the `bruno/imagenetog-redux` folder in Bruno and select the **dev**
+environment. Every request inherits an `Authorization: {{authToken}}` header;
+you obtain that token through the browser and the **Get Token** request.
+
+#### Prerequisite: the Cognito hosted-UI domain
+
+The browser login page requires a Cognito hosted-UI domain
+(`aws_cognito_user_pool_domain`). It is defined in the `auth` module but is a
+**new** addition — if your deployed environment predates it, apply it first:
+
+```bash
+cd terraform/environments/dev
+terraform init -backend-config=backend.config
+terraform apply   # creates {env}-imagenetog-auth hosted-UI domain + outputs
+```
+
+> The domain prefix (`{env}-imagenetog-auth`) must be globally unique within the
+> region. If `apply` fails with a domain-already-exists error, override
+> `hosted_ui_domain_suffix` in the `auth` module call.
+
+#### Prerequisite: a Cognito user to log in with
+
+The pool has no seeded user. Create and confirm a dev test user with the AWS CLI
+(sign-up + email verification also works, but admin creation is fastest):
+
+```bash
+export AWS_PROFILE=terraform
+export AWS_REGION=us-east-1
+USER_POOL_ID="$(terraform -chdir=terraform/environments/dev output -raw user_pool_id)"
+
+# Create the user (email is the username).
+aws cognito-idp admin-create-user \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "tester@example.com" \
+  --message-action SUPPRESS
+
+# Set a permanent password so the account is immediately usable
+# (must satisfy the pool policy: >=12 chars, upper/lower/number/symbol).
+# Choose your own value; do not commit it anywhere.
+aws cognito-idp admin-set-user-password \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "tester@example.com" \
+  --password "$TEST_USER_PASSWORD" \
+  --permanent
+```
+
+> Set `TEST_USER_PASSWORD` in your shell first (e.g.
+> `export TEST_USER_PASSWORD='...'`) with a value satisfying the pool policy.
+> It is a throwaway credential for a **dev** pool — never reuse it or commit it
+> anywhere.
+
+#### Read the deployment coordinates
+
+```bash
+cd terraform/environments/dev
+terraform output api_invoke_url        # -> baseUrl (already includes /{env}/v1)
+terraform output rest_api_id           # -> baseUrl host (if building the URL by hand)
+terraform output app_client_id         # -> appClientId
+terraform output hosted_ui_domain      # -> hostedUiDomain prefix
+terraform output hosted_ui_login_url   # -> open this in a browser (browser flow)
+```
+
+> **URL convention.** The API Gateway **stage name equals the environment name**
+> (`dev`, `staging`, `prod`), and the API version lives in the resource path
+> (`/v1`). So the invoke URL is
+> `https://<rest_api_id>.execute-api.us-east-1.amazonaws.com/<env>/v1` — for dev,
+> `.../dev/v1`. Only the host varies between environments; the `/v1/...` path is
+> identical everywhere. The stage name must never be `v1` (it would collide with
+> the `/v1` path prefix); a Terraform validation enforces this.
+
+#### Populate the Bruno `dev` environment
+
+Set these variables in the Bruno **dev** environment (they ship with
+placeholders — no real values are committed):
+
+| Variable | Value |
+|---|---|
+| `baseUrl` | `https://<rest_api_id>.execute-api.us-east-1.amazonaws.com/dev/v1` (from `terraform output api_invoke_url`) |
+| `hostedUiDomain` | `<hosted_ui_domain>.auth.us-east-1.amazoncognito.com` |
+| `appClientId` | `terraform output app_client_id` |
+| `redirectUri` | `https://localhost:3000/callback` (matches the app client) |
+| `authCode` | *(empty — pasted after browser login)* |
+| `authToken` | *(empty — set automatically by Get Token)* |
+| `testCollection` | an existing collection name (e.g. `my-collection`) |
+| `testImageKey` | an existing image key in that collection |
+
+#### Obtain an ID token for Bruno
+
+You need a Cognito **ID token** in the Bruno `authToken` variable. Send it as
+the **raw** `Authorization` header value — **no `Bearer` prefix** (that is how
+the API Gateway Cognito authorizer expects it). There are two ways to get one.
+
+##### Option A — AWS CLI (fastest; recommended for quick testing)
+
+The app client enables `ALLOW_USER_PASSWORD_AUTH`, so you can mint an ID token
+directly with `initiate-auth` — no browser needed. Use the test user created
+above:
+
+```bash
+export AWS_PROFILE=terraform
+export AWS_REGION=us-east-1
+cd terraform/environments/dev
+
+CLIENT_ID="$(terraform output -raw app_client_id)"
+
+ID_TOKEN="$(aws cognito-idp initiate-auth \
+  --auth-flow USER_PASSWORD_AUTH \
+  --client-id "$CLIENT_ID" \
+  --auth-parameters USERNAME=tester@example.com,PASSWORD="$TEST_USER_PASSWORD" \
+  --query 'AuthenticationResult.IdToken' --output text)"
+
+echo "$ID_TOKEN"   # copy this value into the Bruno `authToken` variable
+```
+
+Paste the `ID_TOKEN` value into the Bruno **dev** environment's `authToken`
+variable, then run any request under **Collections** or **Images**. You can also
+sanity-check the token straight from curl before using Bruno:
+
+```bash
+BASE_URL="$(terraform output -raw api_invoke_url)"   # -> https://<id>.execute-api.us-east-1.amazonaws.com/dev/v1
+curl -i -H "Authorization: $ID_TOKEN" "$BASE_URL/collections"   # -> 200 + JSON
+```
+
+ID tokens expire after ~1 hour — re-run `initiate-auth` to get a fresh one.
+
+> Do **not** paste real tokens into the committed `environments/dev.bru`
+> (Bruno persists edited values back to that file). Keep real values in a
+> git-ignored `environments/dev.local.bru` instead — `bruno/**/environments/*.local.bru`
+> is already git-ignored.
+
+##### Option B — browser (Cognito hosted UI)
+
+1. Open the `hosted_ui_login_url` value in a browser and log in with the test
+   user.
+2. Cognito redirects to `https://localhost:3000/callback?code=<CODE>`. Nothing
+   runs on `localhost:3000` — just copy the `code` value out of the address bar.
+3. Paste it into the Bruno `authCode` variable.
+4. Run **Auth → Get Token**. Its post-response script stores the ID token in
+   `authToken`, so all other requests authenticate automatically.
+5. Run any request under **Collections** or **Images**. Repeat steps 1–4 to
+   refresh when the token expires.
+
+The collection includes happy-path and negative-path requests (not-found → 404
+`resource.not_found`; cleared token → 401 `auth.unauthorized`; traversal key →
+400 `param.invalid`) with lightweight assertions on status and key fields.
+
+> **No secrets are committed.** The Bruno environment ships with only
+> placeholders; real tokens and codes stay local. `bruno/**/.env` and
+> `bruno/**/environments/*.local.bru` are git-ignored.

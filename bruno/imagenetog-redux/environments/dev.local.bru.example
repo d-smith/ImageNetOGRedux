@@ -1,0 +1,10 @@
+vars {
+  baseUrl: https://REST_API_ID.execute-api.us-east-1.amazonaws.com/dev/v1
+  hostedUiDomain: dev-imagenetog-auth.auth.us-east-1.amazoncognito.com
+  appClientId: APP_CLIENT_ID
+  redirectUri: https://localhost:3000/callback
+  authCode: 
+  authToken: 
+  testCollection: my-collection
+  testImageKey: photos/example.jpg
+}

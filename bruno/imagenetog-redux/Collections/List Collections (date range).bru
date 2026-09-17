@@ -1,0 +1,27 @@
+meta {
+  name: List Collections (date range)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/collections?createdAfter=2024-01-01&createdBefore=2025-12-31&sort=created&order=desc
+}
+
+params:query {
+  createdAfter: 2024-01-01
+  createdBefore: 2025-12-31
+  sort: created
+  order: desc
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}
+
+docs {
+  Date-range filter on `created` plus descending sort by creation date.
+  Dates are ISO-8601 (YYYY-MM-DD). An inverted range returns 400 param.invalid.
+}

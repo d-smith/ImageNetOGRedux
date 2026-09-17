@@ -1,0 +1,28 @@
+meta {
+  name: Get Image URL (invalid key)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}/images/..%2F..%2Fsecret
+}
+
+tests {
+  test("returns 400", function() {
+    expect(res.status).to.equal(400);
+  });
+  test("uses the param.invalid token", function() {
+    expect(res.body.error).to.equal("param.invalid");
+  });
+}
+
+docs {
+  Negative path: an image key containing a path-traversal sequence (`..`) is
+  rejected with 400 `param.invalid` before any AWS call. The `..` is
+  URL-encoded (%2F) so it reaches the handler as a literal key segment.
+
+  Note: depending on how API Gateway normalizes encoded slashes, this may
+  instead surface as a routing 403/404 at the gateway; the intent is to
+  demonstrate that traversal keys never yield a presigned URL.
+}

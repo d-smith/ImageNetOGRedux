@@ -1,0 +1,28 @@
+meta {
+  name: List Collections (paged)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/collections?limit=5&offset=0
+}
+
+params:query {
+  limit: 5
+  offset: 0
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("honors the requested limit", function() {
+    expect(res.body.limit).to.equal(5);
+    expect(res.body.items.length).to.be.at.most(5);
+  });
+}
+
+docs {
+  Pagination example: page size 5 starting at offset 0.
+}

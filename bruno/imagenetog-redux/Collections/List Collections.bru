@@ -1,0 +1,27 @@
+meta {
+  name: List Collections
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/collections
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("has a paginated envelope", function() {
+    expect(res.body.items).to.be.an("array");
+    expect(res.body.total).to.be.a("number");
+    expect(res.body.limit).to.be.a("number");
+    expect(res.body.offset).to.be.a("number");
+  });
+}
+
+docs {
+  List collections with default pagination (limit 20, offset 0, sort by name).
+}

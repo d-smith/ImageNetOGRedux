@@ -1,0 +1,30 @@
+meta {
+  name: List Images (paged)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}/images?limit=5&offset=0&sort=dateAdded&order=desc
+}
+
+params:query {
+  limit: 5
+  offset: 0
+  sort: dateAdded
+  order: desc
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("honors the requested limit", function() {
+    expect(res.body.limit).to.equal(5);
+    expect(res.body.items.length).to.be.at.most(5);
+  });
+}
+
+docs {
+  Date-listing pagination: page size 5, newest first (sort=dateAdded, order=desc).
+}

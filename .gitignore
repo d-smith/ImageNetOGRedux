@@ -42,3 +42,8 @@ htmlcov/
 .vscode/
 *.swp
 *~
+
+# Bruno — never commit local secret/override env files (the committed
+# environments/*.bru contain placeholders only; real tokens/codes stay local)
+bruno/**/environments/*.local.bru
+bruno/**/.env

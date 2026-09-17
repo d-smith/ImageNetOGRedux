@@ -1,0 +1,24 @@
+meta {
+  name: Get Image URL
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/collections/{{testCollection}}/images/{{testImageKey}}
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("returns a presigned URL", function() {
+    expect(res.body.key).to.be.a("string");
+    expect(res.body.url).to.be.a("string");
+  });
+}
+
+docs {
+  Returns a time-limited presigned GET URL ({key, url}) for the image. The URL
+  expires after a fixed server-side TTL (300 seconds).
+}
