@@ -51,6 +51,7 @@ resource "aws_iam_policy" "api_dynamodb_read" {
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem",
+          "dynamodb:BatchGetItem",
           "dynamodb:Query",
           "dynamodb:Scan",
         ]

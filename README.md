@@ -309,6 +309,42 @@ selected explicitly with `-m integration`. Each test **skips** (rather than
 fails) when the environment variables it needs are not set, so it is safe to
 invoke them without a deployment.
 
+### Quick start (run everything)
+
+Copy-paste this from the **repo root** to configure and run the full suite
+against `dev`. Edit only the three values in step 2; everything else is read
+from Terraform.
+
+```bash
+# 1. Auth + region
+aws sso login --profile terraform
+export AWS_PROFILE=terraform
+export AWS_REGION=us-east-1
+export IMAGENETOG_ENV=dev
+
+# 2. FILL THESE IN (Terraform can't derive them):
+export IMAGENETOG_TEST_COLLECTION="my-collection"        # an existing collection
+export IMAGENETOG_TEST_USERNAME="tester@example.com"     # a confirmed Cognito user
+export IMAGENETOG_TEST_PASSWORD="REPLACE_WITH_PASSWORD"  # that user's permanent password
+
+# 3. (Optional) create/confirm the test user with the password above:
+USER_POOL_ID="$(terraform -chdir=terraform/environments/dev output -raw user_pool_id)"
+aws cognito-idp admin-create-user --user-pool-id "$USER_POOL_ID" \
+  --username "$IMAGENETOG_TEST_USERNAME" --message-action SUPPRESS 2>/dev/null || true
+aws cognito-idp admin-set-user-password --user-pool-id "$USER_POOL_ID" \
+  --username "$IMAGENETOG_TEST_USERNAME" --password "$IMAGENETOG_TEST_PASSWORD" --permanent
+
+# 4. Auto-derived from Terraform outputs:
+export IMAGENETOG_API_BASE_URL="$(terraform -chdir=terraform/environments/dev output -raw api_invoke_url)"
+export IMAGENETOG_APP_CLIENT_ID="$(terraform -chdir=terraform/environments/dev output -raw app_client_id)"
+export IMAGENETOG_REST_API_ID="$(terraform -chdir=terraform/environments/dev output -raw rest_api_id)"
+
+# 5. Run the full suite
+.venv/bin/pytest -m integration tests/integration --no-cov -v
+```
+
+The per-variable detail and what each test does are documented below.
+
 ### Setup
 
 1. Deploy an environment and create a test collection (see **Deployment**).
@@ -333,10 +369,15 @@ invoke them without a deployment.
    # Override derived defaults if your naming differs:
    export IMAGENETOG_IMAGES_TABLE=dev-imagenetog-images
    export IMAGENETOG_TEST_IMAGE_BUCKET=dev-imagenetog-my-collection-images
+
+   # Override the query used by the description-search test to match the
+   # committed test image (defaults to "a red house in a green field"):
+   export IMAGENETOG_TEST_SEARCH_TERM="a red house in a green field"
    ```
 
-4. For the authenticated happy-path and stage-routing tests, also export the
-   app client id, a test user, and the REST API id:
+4. For the authenticated tests (happy-path, description-search, and
+   stage-routing), also export the app client id, a test user, and the REST API
+   id:
 
    ```bash
    export IMAGENETOG_APP_CLIENT_ID="$(terraform -chdir=terraform/environments/dev output -raw app_client_id)"
@@ -360,6 +401,7 @@ What each test needs and does:
 | `test_stage_routing.py` | `IMAGENETOG_REST_API_ID` (+ AWS creds) | Structural check: asserts the API Gateway stage name does not collide with a top-level resource path segment (e.g. a stage named `v1` vs the `/v1` prefix), which would make routes unreachable. |
 | `test_rate_limit.py` | `IMAGENETOG_API_BASE_URL` (+ AWS creds) | Verifies the rate-limiting **configuration**: the usage plan exists with positive rate/burst throttle settings, is attached to the API stage, and the `THROTTLED` gateway response returns the `rate_limit.exceeded` JSON contract. |
 | `test_ingestion_e2e.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Uploads a test image to the collection bucket and polls DynamoDB (up to 180s) until the metadata record appears with all required fields. |
+| `test_search_integration.py` | `IMAGENETOG_API_BASE_URL`, `IMAGENETOG_APP_CLIENT_ID`, `IMAGENETOG_TEST_USERNAME`, `IMAGENETOG_TEST_PASSWORD`, `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Exercises the description (vector) search path end-to-end: uploads a committed synthetic image (`tests/integration/assets/red_house_landscape.png`), waits for ingestion, then searches for it and asserts a `200` with the image returned and a numeric `score`. Also checks `maxDistance` override behaviour, `maxDistance` validation (`400 param.invalid`), and that plain date listings carry no `score`. Takes ~30–90s (polls ingestion). |
 | `test_presigned_url_expiry.py` | `IMAGENETOG_TEST_COLLECTION` (+ AWS creds) | Generates a 5-second presigned URL, waits past expiry, and asserts S3 returns `403`. |
 
 Any test whose required variables are unset is reported as **skipped**. To run a

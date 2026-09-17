@@ -225,6 +225,7 @@ class _FakeS3Vectors:
         topK: int,  # noqa: N803
         queryVector: dict[str, Any],  # noqa: N803
         filter: dict[str, Any] | None = None,  # noqa: A002 — boto3 param name
+        returnDistance: bool = False,  # noqa: N803 — boto3 param name
     ) -> dict[str, Any]:
         candidates = self._indexed
         if filter is not None:
@@ -237,7 +238,16 @@ class _FakeS3Vectors:
                 if (lo is None or e >= lo) and (hi is None or e <= hi)
             ]
         selected = candidates[:topK]
-        return {"vectors": [{"key": k} for k, _ in selected]}
+        # Return a small in-threshold distance so results pass the relevance
+        # filter (SEARCH_MAX_DISTANCE); include it only when asked, as the real
+        # service does.
+        vectors: list[dict[str, Any]] = []
+        for k, _ in selected:
+            entry: dict[str, Any] = {"key": k}
+            if returnDistance:
+                entry["distance"] = 0.1
+            vectors.append(entry)
+        return {"vectors": vectors}
 
 
 def _install_vector_stub(monkeypatch: pytest.MonkeyPatch, indexed: list[tuple[str, int]]) -> None:
@@ -276,9 +286,12 @@ def test_vector_search_result_containment(
     returned = {item["key"] for item in result["items"]}
     # Every returned key exists as a real image record in the collection.
     assert returned <= valid_keys
-    # Field privacy still holds on the vector-search path.
+    # Field privacy still holds on the vector-search path (score is added for
+    # vector results; internal storage fields never are).
     for item in result["items"]:
-        assert set(item.keys()) == {"key", "dateAdded", "description"}
+        assert set(item.keys()) == {"key", "dateAdded", "description", "score"}
+        assert "s3_bucket" not in item
+        assert "s3vector_bucket" not in item
 
 
 @settings(deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])

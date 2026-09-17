@@ -28,7 +28,7 @@ Security notes (see security-patterns steering):
 
 import json
 from datetime import UTC, date, datetime
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import boto3
 from boto3.dynamodb.conditions import ConditionBase, Key
@@ -81,11 +81,17 @@ _MAX_DESCRIPTION_LENGTH = 500
 
 
 class PublicImage(TypedDict):
-    """An image as returned to API consumers (no internal fields)."""
+    """An image as returned to API consumers (no internal fields).
+
+    ``score`` is the vector-search relevance distance (cosine; lower = closer).
+    It is present only for description (vector) search results and omitted for
+    plain date listings.
+    """
 
     key: str
     dateAdded: str  # noqa: N815 — public API field name is camelCase by contract
     description: str | None
+    score: NotRequired[float]
 
 
 class ImageListResponse(TypedDict):
@@ -97,23 +103,29 @@ class ImageListResponse(TypedDict):
     offset: int
 
 
-def to_public_image(item: dict[str, Any]) -> PublicImage:
+def to_public_image(item: dict[str, Any], score: float | None = None) -> PublicImage:
     """Project a raw DynamoDB image item to its public shape.
 
     Args:
         item: A raw DynamoDB item dict for an image.
+        score: Optional vector-search relevance distance to attach (present only
+            for description search results; omitted when ``None``).
 
     Returns:
-        A :class:`PublicImage` containing only ``key``, ``dateAdded``, and
-        ``description`` (which may be ``None``). Internal storage fields
-        (``s3_bucket``, ``s3vector_bucket``) are never included.
+        A :class:`PublicImage` containing ``key``, ``dateAdded``, and
+        ``description`` (which may be ``None``), plus ``score`` when supplied.
+        Internal storage fields (``s3_bucket``, ``s3vector_bucket``) are never
+        included.
     """
     description = item.get("description")
-    return {
+    public: PublicImage = {
         "key": item["image_key"],
         "dateAdded": item["date_added"],
         "description": description if description is not None else None,
     }
+    if score is not None:
+        public["score"] = score
+    return public
 
 
 def list_images(
@@ -121,6 +133,7 @@ def list_images(
     pagination: PaginationParams,
     date_range: DateRangeParams,
     description: str | None,
+    max_distance: float | None = None,
 ) -> ImageListResponse:
     """List images in a collection with date filtering and/or vector search.
 
@@ -133,6 +146,9 @@ def list_images(
         date_range: Validated ``dateAdded`` bounds (either may be ``None``).
         description: Free-text vector-search query, or ``None`` for a plain
             date/listing query.
+        max_distance: Optional per-request maximum cosine distance for vector
+            search results (lower = closer). ``None`` uses
+            ``config.SEARCH_MAX_DISTANCE``. Ignored for date-only listings.
 
     Returns:
         An :class:`ImageListResponse` envelope.
@@ -146,7 +162,9 @@ def list_images(
 
     if description is None:
         return _list_by_date(collection_name, pagination, date_range)
-    return _search_by_description(collection_name, pagination, date_range, description)
+    return _search_by_description(
+        collection_name, pagination, date_range, description, max_distance
+    )
 
 
 def get_presigned_url(collection_name: str, image_key: str) -> dict[str, str]:
@@ -268,6 +286,7 @@ def _search_by_description(
     pagination: PaginationParams,
     date_range: DateRangeParams,
     description: str,
+    max_distance: float | None = None,
 ) -> ImageListResponse:
     """Vector-search images by description, optionally filtered by date.
 
@@ -285,10 +304,14 @@ def _search_by_description(
         pagination: Validated limit/offset (``limit`` maps to ``topK``).
         date_range: Validated ``dateAdded`` bounds (either may be ``None``).
         description: The free-text vector-search query.
+        max_distance: Maximum cosine distance for a result to be kept
+            (lower = closer). ``None`` uses ``config.SEARCH_MAX_DISTANCE``.
 
     Returns:
         An :class:`ImageListResponse` envelope.
     """
+    threshold = max_distance if max_distance is not None else config.SEARCH_MAX_DISTANCE
+
     vector_bucket = str(_get_collection_record(collection_name)["s3vector_bucket"])
 
     embedding = _embed_description(description)
@@ -298,6 +321,7 @@ def _search_by_description(
         "indexName": _VECTOR_INDEX_NAME,
         "topK": pagination.limit,
         "queryVector": {"float32": embedding},
+        "returnDistance": True,
     }
     date_filter = _build_vector_date_filter(date_range)
     if date_filter is not None:
@@ -310,15 +334,30 @@ def _search_by_description(
     # Properties 13 & 14).
     response = _s3vectors().query_vectors(**query_kwargs)
     vectors = response.get("vectors", [])
-    keys = [str(v["key"]) for v in vectors]
+
+    # Relevance filter: drop results whose distance exceeds the configured
+    # threshold, so an irrelevant query returns few/no matches rather than the
+    # full ranked top-K. Distance is cosine (lower = closer). Results missing a
+    # distance (should not happen with returnDistance=True) are kept.
+    matches: list[tuple[str, float | None]] = []
+    for v in vectors:
+        distance = v.get("distance")
+        if distance is not None and float(distance) > threshold:
+            continue
+        matches.append((str(v["key"]), float(distance) if distance is not None else None))
+
+    keys = [k for k, _ in matches]
+    score_by_key = dict(matches)
 
     items_by_key = _batch_get_images(collection_name, keys)
-    # Preserve the ranked order returned by S3 Vectors.
-    ordered = [items_by_key[k] for k in keys if k in items_by_key]
+    # Preserve the ranked order returned by S3 Vectors, attaching each score.
+    items = [
+        to_public_image(items_by_key[k], score=score_by_key[k]) for k in keys if k in items_by_key
+    ]
 
     return {
-        "items": [to_public_image(i) for i in ordered],
-        "total": len(ordered),
+        "items": items,
+        "total": len(items),
         "limit": pagination.limit,
         "offset": pagination.offset,
     }

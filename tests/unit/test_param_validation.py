@@ -14,6 +14,7 @@ from api_handler.exceptions import InvalidParameterError
 from api_handler.params import (
     parse_date,
     parse_date_range,
+    parse_max_distance,
     parse_pagination,
     parse_sort,
 )
@@ -136,3 +137,29 @@ class TestDateRange:
     def test_malformed_bound_rejected(self) -> None:
         with pytest.raises(InvalidParameterError):
             parse_date_range(_event(createdAfter="garbage"))
+
+
+class TestMaxDistance:
+    def test_absent_returns_none(self) -> None:
+        assert parse_max_distance(_event()) is None
+
+    def test_valid_value(self) -> None:
+        assert parse_max_distance(_event(maxDistance="0.65")) == 0.65
+
+    def test_lower_bound_zero_ok(self) -> None:
+        assert parse_max_distance(_event(maxDistance="0")) == 0.0
+
+    def test_upper_bound_two_ok(self) -> None:
+        assert parse_max_distance(_event(maxDistance="2")) == 2.0
+
+    def test_negative_rejected(self) -> None:
+        with pytest.raises(InvalidParameterError):
+            parse_max_distance(_event(maxDistance="-0.1"))
+
+    def test_above_two_rejected(self) -> None:
+        with pytest.raises(InvalidParameterError):
+            parse_max_distance(_event(maxDistance="2.5"))
+
+    def test_non_numeric_rejected(self) -> None:
+        with pytest.raises(InvalidParameterError):
+            parse_max_distance(_event(maxDistance="close"))

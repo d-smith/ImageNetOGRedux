@@ -132,7 +132,7 @@ IAM role boundaries by function — do not expand these without a documented rea
 
 | Role | Permitted actions | Permitted resources |
 |---|---|---|
-| `api_lambda_role` | `dynamodb:GetItem`, `Query`, `Scan` | collections + images tables and their indexes |
+| `api_lambda_role` | `dynamodb:GetItem`, `BatchGetItem`, `Query`, `Scan` | collections + images tables and their indexes |
 | `api_lambda_role` | `s3:GetObject` | `*-imagenetog-*-images` buckets only |
 | `api_lambda_role` | `bedrock:InvokeModel` | `amazon.titan-embed-image-v1` ARN only |
 | `api_lambda_role` | `s3vectors:QueryVectors`, `GetVectors` | `*-imagenetog-*-vectors` buckets only |

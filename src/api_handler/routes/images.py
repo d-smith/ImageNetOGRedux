@@ -16,6 +16,7 @@ from typing import Any
 from api_handler.app import app
 from api_handler.params import (
     parse_date_range,
+    parse_max_distance,
     parse_pagination,
     parse_sort,
     validate_collection_name,
@@ -57,6 +58,7 @@ def list_images(collection_name: str) -> dict[str, Any]:
     parse_sort(event, _IMAGE_SORT_FIELDS)
     date_range = parse_date_range(event, "addedAfter", "addedBefore")
     description = _query_value(event, "description")
+    max_distance = parse_max_distance(event)
 
     # 2. Delegate to the service layer.
     return dict(
@@ -65,6 +67,7 @@ def list_images(collection_name: str) -> dict[str, Any]:
             pagination=pagination,
             date_range=date_range,
             description=description,
+            max_distance=max_distance,
         )
     )
 

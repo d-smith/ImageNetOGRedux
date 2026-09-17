@@ -49,6 +49,7 @@ resource "aws_lambda_function" "api_handler" {
       COGNITO_USER_POOL_ID      = var.cognito_user_pool_id
       EMBED_MODEL_ID            = var.embed_model_id
       PRESIGNED_URL_TTL_SECONDS = tostring(var.presigned_url_ttl_seconds)
+      SEARCH_MAX_DISTANCE       = tostring(var.search_max_distance)
       POWERTOOLS_SERVICE_NAME   = "${local.name_prefix}-api-handler"
     }
   }

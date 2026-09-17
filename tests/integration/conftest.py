@@ -32,6 +32,7 @@ section):
 
 import os
 from collections.abc import Iterator
+from pathlib import Path
 
 import boto3
 import pytest
@@ -71,6 +72,23 @@ def app_client_id() -> str:
 def rest_api_id() -> str:
     """API Gateway REST API id (from terraform output rest_api_id)."""
     return _require("IMAGENETOG_REST_API_ID")
+
+
+@pytest.fixture(scope="session")
+def search_image_path() -> str:
+    """Path to the committed synthetic test image (a red house landscape).
+
+    Distinctive enough that a text query like "a red house" embeds close to it
+    (~0.5 cosine distance) while unrelated queries stay well above the default
+    threshold — see the search integration test.
+    """
+    return str(Path(__file__).parent / "assets" / "red_house_landscape.png")
+
+
+@pytest.fixture(scope="session")
+def search_match_term() -> str:
+    """A text query known to match the committed test image."""
+    return os.environ.get("IMAGENETOG_TEST_SEARCH_TERM", "a red house in a green field")
 
 
 @pytest.fixture(scope="session")

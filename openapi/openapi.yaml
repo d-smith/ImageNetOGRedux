@@ -133,6 +133,7 @@ paths:
         - $ref: '#/components/parameters/addedAfterParam'
         - $ref: '#/components/parameters/addedBeforeParam'
         - $ref: '#/components/parameters/descriptionParam'
+        - $ref: '#/components/parameters/maxDistanceParam'
       responses:
         '200':
           description: A paginated list of images.
@@ -258,6 +259,15 @@ components:
           type: [string, 'null']
           description: Generated natural-language description of the image; may be null.
           example: A sunset over a mountain range.
+        score:
+          type: number
+          format: float
+          description: |
+            Vector-search relevance distance (cosine; lower is closer). Present
+            only on description (vector) search results; omitted for plain date
+            listings. Results are filtered to a maximum distance server-side, so
+            an irrelevant query returns few or no items.
+          example: 0.5192
 
     ImageList:
       type: object
@@ -418,6 +428,22 @@ components:
       schema:
         type: string
         maxLength: 500
+
+    maxDistanceParam:
+      name: maxDistance
+      in: query
+      required: false
+      description: |
+        Maximum cosine distance (lower = more similar) for a description
+        (vector) search result to be returned. Results beyond this are filtered
+        out, so an irrelevant query returns few or no items. Applies only when
+        `description` is supplied. Defaults to a server-configured value when
+        omitted. Range 0.0–2.0.
+      schema:
+        type: number
+        format: float
+        minimum: 0.0
+        maximum: 2.0
 
     collectionNameParam:
       name: collection_name
