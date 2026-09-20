@@ -420,6 +420,27 @@ single integration test:
 > `terraform/environments/dev/terraform.tfvars`.
 
 
+## Architecture diagram
+
+An editable AWS architecture diagram lives at
+[`docs/architecture.drawio`](docs/architecture.drawio) — open or edit it with
+[draw.io / diagrams.net](https://app.diagrams.net) (web, desktop, or the VS Code
+"Draw.io Integration" extension). It covers both the read path (Client → Cognito
+→ API Gateway → api-handler Lambda → DynamoDB / S3 / Bedrock / S3 Vectors) and
+the event-driven ingestion pipeline (S3 upload → EventBridge → Step Functions →
+embed/describe/store Lambdas).
+
+The diagram is generated from a declarative model (not parsed from Terraform).
+To regenerate it after the topology changes, edit the `NODES` / `EDGES` /
+`GROUPS` tables in `src/scripts/generate_architecture_diagram.py` and re-run:
+
+```bash
+.venv/bin/python -m scripts.generate_architecture_diagram
+# custom output path:
+.venv/bin/python -m scripts.generate_architecture_diagram --output docs/architecture.drawio
+```
+
+
 ## API spec & Bruno collection
 
 The read API is described by an OpenAPI 3.1 spec, and a
