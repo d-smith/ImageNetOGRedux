@@ -12,6 +12,7 @@ Routes:
 """
 
 from typing import Any
+from urllib.parse import unquote
 
 from api_handler.app import app
 from api_handler.params import (
@@ -94,6 +95,14 @@ def get_image(collection_name: str, image_key: str) -> dict[str, Any]:
         ImageNotFoundError: If the image key does not exist in the collection.
     """
     validate_collection_name(collection_name)
+    # API Gateway delivers the {image_key} path parameter still percent-encoded
+    # (e.g. "photos%2Fcat_0573.jpg"), because a key such as "photos/cat_0573.jpg"
+    # must be encoded to occupy a single path segment. Decode it before both
+    # validation and the DynamoDB/S3 lookup so the key matches the value stored
+    # at ingestion time. Decoding *before* validation is deliberate: it ensures
+    # the ".." traversal check runs on the real key (an encoded "%2E%2E" must not
+    # slip past validation and only decode later).
+    image_key = unquote(image_key)
     validate_image_key(image_key)
     return dict(images_service.get_presigned_url(collection_name, image_key))
 

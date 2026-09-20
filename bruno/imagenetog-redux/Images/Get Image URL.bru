@@ -5,7 +5,13 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/collections/{{testCollection}}/images/{{testImageKey}}
+  url: {{baseUrl}}/collections/{{testCollection}}/images/:imageKey
+  body: none
+  auth: none
+}
+
+params:path {
+  imageKey: photos%2Fcat_0573.jpg
 }
 
 tests {
