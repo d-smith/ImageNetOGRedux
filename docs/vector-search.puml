@@ -1,0 +1,76 @@
+@startuml vector-search
+title ImageNetOG Redux — Vector (Description) Search Path
+
+autonumber
+
+actor "API client" as Client
+participant "API Gateway\n{env} stage, /v1" as APIGW
+participant "Cognito\nUser Pool authorizer" as Cognito
+participant "api_handler Lambda\n(resolve + guards)" as Handler
+participant "routes/images.py\nlist_images" as Route
+participant "params.py\n(validation)" as Params
+participant "services/images.py\n_search_by_description" as Svc
+participant "Bedrock\nTitan Embed" as Bedrock
+participant "S3 Vectors\n{collection}-vectors\nindex: images" as S3Vec
+database "DynamoDB\n{env}-imagenetog-images\n+ collections" as DDB
+
+Client -> APIGW : GET /v1/collections/{name}/images?description=...\nAuthorization: <ID token>
+APIGW -> Cognito : validate ID token
+Cognito --> APIGW : allow
+APIGW -> Handler : proxy event
+activate Handler
+
+note right of Handler
+  Guards: /v1/ prefix check,
+  GET-only method enforcement
+end note
+
+Handler -> Route : list_images(collection_name)
+activate Route
+
+Route -> Params : validate_collection_name +\n parse_pagination / parse_sort /\n parse_date_range / parse_max_distance
+note right of Params : validate ALL input before any AWS call
+Params --> Route : validated params + description
+
+Route -> Svc : list_images(..., description, max_distance)
+activate Svc
+
+Svc -> DDB : get_item(collections, collection_name)
+alt collection missing
+    DDB --> Svc : (no item)
+    Svc --> Route : raise CollectionNotFoundError (404)
+else collection exists
+    DDB --> Svc : collection record (trusted s3vector_bucket)
+
+    Svc -> Bedrock : invoke_model(Titan Embed)\ndescription.strip()[:500]
+    Bedrock --> Svc : query embedding
+
+    Svc -> S3Vec : query_vectors(vectorBucketName=s3vector_bucket,\n indexName=images, topK=limit,\n queryVector, returnDistance=true,\n [date_added_epoch filter])
+    S3Vec --> Svc : ranked vectors [{key, distance}]
+
+    note right of Svc
+      Drop results with distance > threshold
+      (max_distance or SEARCH_MAX_DISTANCE=0.6)
+    end note
+
+    Svc -> DDB : batch_get_item(images, kept keys)
+    DDB --> Svc : image metadata items
+    note right of Svc
+      Keys with no metadata are dropped
+      (graceful: fewer results, not error).
+      Order preserved from vector rank;
+      score attached; internal bucket
+      fields stripped by to_public_image
+    end note
+
+    Svc --> Route : ImageListResponse {items(+score), total, limit, offset}
+end
+deactivate Svc
+
+Route --> Handler : dict envelope
+deactivate Route
+Handler --> APIGW : 200 JSON (or mapped error)
+deactivate Handler
+APIGW --> Client : response
+
+@enduml

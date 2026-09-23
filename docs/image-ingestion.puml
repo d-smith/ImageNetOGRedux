@@ -1,0 +1,80 @@
+@startuml image-ingestion
+title ImageNetOG Redux — Image Ingestion Path
+
+autonumber
+
+actor "Uploader" as User
+participant "S3 image bucket\n{env}-imagenetog-{collection}-images" as S3Img
+participant "EventBridge\n(Object Created rule)" as EB
+participant "Step Functions\n{env}-imagenetog-ingestion" as SFN
+box "Parallel: EmbedAndDescribe" #F5F5F5
+participant "ingestion_embed\nLambda" as Embed
+participant "ingestion_describe\nLambda" as Describe
+end box
+participant "ingestion_store\nLambda" as Store
+participant "Bedrock\nTitan Embed / Nova Lite" as Bedrock
+participant "S3 Vectors\n{env}-imagenetog-{collection}-vectors\nindex: images" as S3Vec
+database "DynamoDB\n{env}-imagenetog-images" as DDB
+
+User -> S3Img : PutObject (image.jpg/.jpeg/.png)
+S3Img -> EB : s3:ObjectCreated event
+note right of EB
+  Rule matches:
+  source = aws.s3
+  detail-type = Object Created
+  bucket name prefix {env}-imagenetog-
+  key suffix .jpg/.jpeg/.png
+end note
+
+EB -> SFN : StartExecution\ninput transformer forwards\n{ s3_bucket, image_key } only
+activate SFN
+
+par Embed branch
+    SFN -> Embed : Task (Retry 2x, Catch -> FailEmbed)
+    activate Embed
+    note right of Embed
+      enrich_event(): derive
+      collection_name, s3vector_bucket
+      (regex on bucket name),
+      date_added, date_added_epoch
+    end note
+    Embed -> S3Img : get_object(image_key)
+    S3Img --> Embed : image bytes (base64)
+    Embed -> Bedrock : invoke_model (Titan Embed, 1024-dim float32)
+    Bedrock --> Embed : embedding
+    Embed -> S3Vec : put_vectors(key=image_key,\n metadata={date_added_epoch, image_key})
+    note right of Embed : idempotent overwrite (keyed by image_key)
+    Embed --> SFN : enriched event
+    deactivate Embed
+else Describe branch (best-effort)
+    SFN -> Describe : Task (Retry 2x, Catch -> FailDescribe)
+    activate Describe
+    Describe -> S3Img : get_object(image_key)
+    S3Img --> Describe : image bytes (base64)
+    Describe -> Bedrock : invoke_model (Nova Lite, describe prompt)
+    Bedrock --> Describe : description text
+    note right of Describe
+      On any error: log + fall back to
+      description = None (never fails workflow)
+    end note
+    Describe --> SFN : event + description
+    deactivate Describe
+end
+
+note over SFN
+  ResultSelector merges [0] embed fields
+  with [1] description into one flat object
+end note
+
+SFN -> Store : StoreMetadata Task (Retry 2x, Catch -> FailWorkflow)
+activate Store
+Store -> DDB : put_item(collection_name, image_key,\n date_added, date_added_epoch,\n description, s3_bucket, s3vector_bucket)
+note right of Store : idempotent put; emits IngestionSuccess metric
+DDB --> Store : ok
+Store --> SFN : event (unchanged)
+deactivate Store
+
+SFN --> SFN : End (success)
+deactivate SFN
+
+@enduml
